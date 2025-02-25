@@ -1,12 +1,12 @@
 import os
 import sys
 import yaml
-import pandas as pd  
-import sqlite3 
+import pandas as pd
+import sqlite3
 import pygetwindow as gw
 import pyautogui
 from datetime import datetime, timedelta
-import threading 
+import threading
 import calendar
 from io import BytesIO
 import tempfile
@@ -71,17 +71,33 @@ def take_screenshot_of_app(app_name, win):
     except Exception as e:
         print(f"An error occurred while capturing the screenshot: {e}")
         return None
-    
+
+
+def clamp_datetime(dt, min_year=1677, max_year=2262):
+    """
+    Clamps a datetime object between [min_year, max_year].
+    Pandas' datetime64 type only supports approx year range [1677..2262].
+    """
+    if dt.year < min_year:
+        return dt.replace(year=min_year, month=1, day=1, hour=0, minute=0, second=0)
+    elif dt.year > max_year:
+        return dt.replace(year=max_year, month=12, day=31, hour=23, minute=59, second=59)
+    return dt
+
 def convert_to_human_readable(bigint_timestamp):
     """
     Convert a Windows FILETIME timestamp to a human-readable datetime object.
     
-    Windows FILETIME is a 64-bit value representing the number of 100-nanosecond 
+    Windows FILETIME is a 64-bit value representing the number of 100-nanosecond
     intervals since January 1, 1601 (UTC). This function converts it to a standard
-    datetime starting from January 1, 1970.
+    datetime starting from January 1, 1970. Because Pandas datetimes only support
+    the range [1677..2262], we clamp any out-of-range date to avoid OverflowError.
     """
     unix_time = (bigint_timestamp - 116444736000000000) / 10000000
-    return datetime(1970, 1, 1) + timedelta(seconds=unix_time)
+    dt = datetime(1970, 1, 1) + timedelta(seconds=unix_time)
+    # Clamp the result to Pandas-supported datetime range
+    dt = clamp_datetime(dt)
+    return dt
 
 def get_most_recent_monday(date):
     days_ago = (date.weekday() + 1) % 7
@@ -99,32 +115,28 @@ def get_specified_date(date_str=None):
         return datetime.now()
 
 def format_message(date, premium_sold, premium_captured, pcr, win_rate, expired_trades, stops, bad_slip, bad_slip_max, spx_last, negative_exp, weekly_pl, monthly_pl):
-    # Define a constant for alignment width
     ALIGN_WIDTH = 12
 
-    # Format values as strings with proper formatting
     premium_sold_str = f"${premium_sold:,.2f}"
     premium_captured_str = f"(${abs(premium_captured):,.2f})" if premium_captured < 0 else f"${premium_captured:,.2f}"
-    pcr_str = f"{pcr:.2f}%"  # Format as percentage with two decimal places
-    win_rate_str = f"{win_rate:.2f}%"  # Format as percentage with two decimal places
-    exp_stp_str = f"{expired_trades}:{stops}"  # Expired trades and stops as a ratio
-    bad_slip_str = f"{int(bad_slip):,}"  # Format bad slip as an integer with commas
-    bad_slip_max_str = f"{abs(bad_slip_max):,.2f}" if bad_slip_max is not None else ""  
+    pcr_str = f"{pcr:.2f}%"
+    win_rate_str = f"{win_rate:.2f}%"
+    exp_stp_str = f"{expired_trades}:{stops}"
+    bad_slip_str = f"{int(bad_slip):,}"
+    bad_slip_max_str = f"{abs(bad_slip_max):,.2f}" if bad_slip_max is not None else ""
     spx_last_str = f"{spx_last:,.2f}" if spx_last is not None else ""
-    
-    # Combine bad_slip and bad_slip_max and ensure the total length fits within the column width
-    combined_bad_slip_str = f"{bad_slip_str}({bad_slip_max_str} max)" if bad_slip_max else bad_slip_str
-    bad_slip_combined_str = f"{combined_bad_slip_str:>{ALIGN_WIDTH}}"  # Right-align the combined string within the specified width
 
-    negative_exp_str = f"{negative_exp}"  
+    combined_bad_slip_str = f"{bad_slip_str}({bad_slip_max_str} max)" if bad_slip_max else bad_slip_str
+    bad_slip_combined_str = f"{combined_bad_slip_str:>{ALIGN_WIDTH}}"
+
+    negative_exp_str = f"{negative_exp}"
     weekly_pl_str = f"(${abs(weekly_pl):,.2f})" if weekly_pl < 0 else f"${weekly_pl:,.2f}"
     monthly_pl_str = f"(${abs(monthly_pl):,.2f})" if monthly_pl < 0 else f"${monthly_pl:,.2f}"
 
-    # Create the formatted message
     formatted_date = date.strftime("%Y %b %d")
     day_of_week = calendar.day_name[date.weekday()]
     full_date_header = f"{formatted_date} ({day_of_week})"
-    
+
     message = f"""
 \n
 """ + "```" + f"""
@@ -147,33 +159,28 @@ def calculate_metrics(df_trades_ordered):
     premium_sold = df_trades_ordered['TotalPremium'].sum()
     premium_captured = df_trades_ordered['ProfitLoss'].sum()
     
-    # Calculate pcr, win_rate based on whether premium_sold is zero
     pcr, win_rate = (
-        ((premium_captured / premium_sold) * 100, 
-         (df_trades_ordered['ProfitLoss'] > 0).mean() * 100) 
+        ((premium_captured / premium_sold) * 100,
+         (df_trades_ordered['ProfitLoss'] > 0).mean() * 100)
         if premium_sold != 0 else (0, 0)
     )
     
     expired_trades = (df_trades_ordered['ClosingProcessed'] == 0).sum()
     stops = (df_trades_ordered['ClosingProcessed'] == 1).sum()
 
-    # Calculate both bad_slip and bad_slip_max in one pass
     bad_slip_data = df_trades_ordered.apply(
         lambda row: abs(row['PriceClose']) - row['PriceStopTarget'], axis=1
     )
-
-    # Find bad slips where the difference is >= 0.50
     bad_slip_condition = bad_slip_data >= 0.50
     
-    bad_slip = bad_slip_condition.sum()  # Count how many satisfy the condition
-    bad_slip_max = bad_slip_data[bad_slip_condition].max() if bad_slip > 0 else 0  # Max of valid slips, or 0 if none
+    bad_slip = bad_slip_condition.sum()
+    bad_slip_max = bad_slip_data[bad_slip_condition].max() if bad_slip > 0 else 0
 
     negative_exp = df_trades_ordered[
         (df_trades_ordered['ClosingProcessed'] == 0) & 
         (df_trades_ordered['ProfitLoss'] < 0)
     ].shape[0]
- 
-    # Return the calculated metrics including bad_slip_max and spx_last
+
     return premium_sold, premium_captured, pcr, win_rate, expired_trades, stops, bad_slip, bad_slip_max, negative_exp
 
 def input_with_timeout(prompt, timeout):
@@ -183,11 +190,11 @@ def input_with_timeout(prompt, timeout):
         answer[0] = input(prompt)
     
     thread = threading.Thread(target=get_input)
-    thread.daemon = True  # Allow thread to be killed on program exit
+    thread.daemon = True
     thread.start()
     thread.join(timeout)
     
-    if thread.is_alive():  # Timeout handling
+    if thread.is_alive():
         print("\nNo response received. The posting will not be deleted.")
         return None
     else:
@@ -206,11 +213,17 @@ def get_last_spx_value(connection, year, month, day):
         target_date = datetime(year, month, day)
         query = "SELECT DailyLogID, LogDate, PL, SPX FROM DailyLog WHERE LogDate IS NOT NULL;"
         df_daily_log = pd.read_sql_query(query, connection)
-        # Convert LogDate to datetime using the convert_to_human_readable function,
-        # then force conversion to a datetime64 dtype.
-        df_daily_log['LogDate'] = pd.to_datetime(df_daily_log['LogDate'].apply(convert_to_human_readable))
+
+        # Convert each row's LogDate into a datetime, clamped to avoid OverflowError
+        df_daily_log['LogDate'] = df_daily_log['LogDate'].apply(convert_to_human_readable)
+
+        # Now cast the entire column to datetime64 (some rows might still be out-of-range,
+        # but clamp_datetime helps avoid an OverflowError).
+        df_daily_log['LogDate'] = pd.to_datetime(df_daily_log['LogDate'])
+
+        # Filter to the requested date
         df_filtered = df_daily_log[df_daily_log['LogDate'].dt.date == target_date.date()]
-        
+
         if not df_filtered.empty:
             last_spx_value = df_filtered.iloc[-1]['SPX']
             print(f"Last SPX value found: {last_spx_value}")
@@ -221,4 +234,7 @@ def get_last_spx_value(connection, year, month, day):
 
     except sqlite3.Error as e:
         print(f"Database error occurred: {e}")
+        return None
+    except Exception as e:
+        print(f"Error during SPX lookup: {e}")
         return None
