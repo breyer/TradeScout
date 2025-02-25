@@ -73,8 +73,15 @@ def take_screenshot_of_app(app_name, win):
         return None
     
 def convert_to_human_readable(bigint_timestamp):
+    """
+    Convert a Windows FILETIME timestamp to a human-readable datetime object.
+    
+    Windows FILETIME is a 64-bit value representing the number of 100-nanosecond 
+    intervals since January 1, 1601 (UTC). This function converts it to a standard
+    datetime starting from January 1, 1970.
+    """
     unix_time = (bigint_timestamp - 116444736000000000) / 10000000
-    return (datetime(1970, 1, 1) + timedelta(seconds=unix_time)).replace(year=2024)
+    return datetime(1970, 1, 1) + timedelta(seconds=unix_time)
 
 def get_most_recent_monday(date):
     days_ago = (date.weekday() + 1) % 7
