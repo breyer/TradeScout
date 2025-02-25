@@ -176,6 +176,7 @@ def input_with_timeout(prompt, timeout):
         answer[0] = input(prompt)
     
     thread = threading.Thread(target=get_input)
+    thread.daemon = True  # Allow thread to be killed on program exit
     thread.start()
     thread.join(timeout)
     
@@ -184,42 +185,3 @@ def input_with_timeout(prompt, timeout):
         return None
     else:
         return answer[0]
-
-def get_last_spx_value(connection, year, month, day):
-    """
-    Retrieve the last SPX value for a given day from the DailyLog table and print the DailyLogID, PL, and SPX.
-    
-    :param connection: SQLite database connection
-    :param year: Year of the date to query
-    :param month: Month of the date to query
-    :param day: Day of the date to query
-    :return: The last SPX value for the day, or None if no entries are found
-    """
-    try:
-        # Create a datetime object for the target date
-        target_date = datetime(year, month, day)
-        
-        # SQL query to fetch all entries from the DailyLog table
-        query = "SELECT DailyLogID, LogDate, PL, SPX FROM DailyLog WHERE LogDate IS NOT NULL;"
-                
-        # Fetch the data from the DailyLog table
-        df_daily_log = pd.read_sql_query(query, connection)
-        
-        # Convert LogDate to human-readable format using convert_to_human_readable
-        df_daily_log['LogDate'] = df_daily_log['LogDate'].apply(convert_to_human_readable)
-        
-        # Filter the DataFrame to only include entries matching the target date
-        df_filtered = df_daily_log[df_daily_log['LogDate'].dt.date == target_date.date()]
-        
-        if not df_filtered.empty:
-            # Get the last SPX value of the day
-            last_spx_value = df_filtered.iloc[-1]['SPX']
-            print(f"Last SPX value found: {last_spx_value}")
-            return last_spx_value
-        else:
-            print(f"No SPX value found for {target_date.strftime('%Y-%m-%d')}")
-            return None
-
-    except sqlite3.Error as e:
-        print(f"Database error occurred: {e}")
-        return None
