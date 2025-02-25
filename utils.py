@@ -143,7 +143,7 @@ def calculate_metrics(df_trades_ordered):
     # Calculate pcr, win_rate based on whether premium_sold is zero
     pcr, win_rate = (
         ((premium_captured / premium_sold) * 100, 
-        (df_trades_ordered['ProfitLoss'] > 0).mean() * 100) 
+         (df_trades_ordered['ProfitLoss'] > 0).mean() * 100) 
         if premium_sold != 0 else (0, 0)
     )
     
@@ -185,3 +185,31 @@ def input_with_timeout(prompt, timeout):
         return None
     else:
         return answer[0]
+
+def get_last_spx_value(connection, year, month, day):
+    """
+    Retrieve the last SPX value for a given day from the DailyLog table.
+    :param connection: SQLite database connection.
+    :param year: Year of the date to query.
+    :param month: Month of the date to query.
+    :param day: Day of the date to query.
+    :return: The last SPX value for the day, or None if no entry is found.
+    """
+    try:
+        target_date = datetime(year, month, day)
+        query = "SELECT DailyLogID, LogDate, PL, SPX FROM DailyLog WHERE LogDate IS NOT NULL;"
+        df_daily_log = pd.read_sql_query(query, connection)
+        df_daily_log['LogDate'] = df_daily_log['LogDate'].apply(convert_to_human_readable)
+        df_filtered = df_daily_log[df_daily_log['LogDate'].dt.date == target_date.date()]
+        
+        if not df_filtered.empty:
+            last_spx_value = df_filtered.iloc[-1]['SPX']
+            print(f"Last SPX value found: {last_spx_value}")
+            return last_spx_value
+        else:
+            print(f"No SPX value found for {target_date.strftime('%Y-%m-%d')}")
+            return None
+
+    except sqlite3.Error as e:
+        print(f"Database error occurred: {e}")
+        return None
