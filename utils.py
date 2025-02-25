@@ -206,7 +206,9 @@ def get_last_spx_value(connection, year, month, day):
         target_date = datetime(year, month, day)
         query = "SELECT DailyLogID, LogDate, PL, SPX FROM DailyLog WHERE LogDate IS NOT NULL;"
         df_daily_log = pd.read_sql_query(query, connection)
-        df_daily_log['LogDate'] = df_daily_log['LogDate'].apply(convert_to_human_readable)
+        # Convert LogDate to datetime using the convert_to_human_readable function,
+        # then force conversion to a datetime64 dtype.
+        df_daily_log['LogDate'] = pd.to_datetime(df_daily_log['LogDate'].apply(convert_to_human_readable))
         df_filtered = df_daily_log[df_daily_log['LogDate'].dt.date == target_date.date()]
         
         if not df_filtered.empty:
