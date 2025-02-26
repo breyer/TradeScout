@@ -72,32 +72,21 @@ def take_screenshot_of_app(app_name, win):
         print(f"An error occurred while capturing the screenshot: {e}")
         return None
 
-
-def clamp_datetime(dt, min_year=1677, max_year=2262):
-    """
-    Clamps a datetime object between [min_year, max_year].
-    Pandas' datetime64 type only supports approx year range [1677..2262].
-    """
-    if dt.year < min_year:
-        return dt.replace(year=min_year, month=1, day=1, hour=0, minute=0, second=0)
-    elif dt.year > max_year:
-        return dt.replace(year=max_year, month=12, day=31, hour=23, minute=59, second=59)
-    return dt
-
 def convert_to_human_readable(bigint_timestamp):
     """
-    Convert a Windows FILETIME timestamp to a human-readable datetime object.
-    
-    Windows FILETIME is a 64-bit value representing the number of 100-nanosecond
-    intervals since January 1, 1601 (UTC). This function converts it to a standard
-    datetime starting from January 1, 1970. Because Pandas datetimes only support
-    the range [1677..2262], we clamp any out-of-range date to avoid OverflowError.
+    Convert the Windows FILETIME timestamp to a datetime, then force the year
+    to the current system year. Month, day, and time remain from the original
+    timestamp, only the year is replaced.
     """
+    # Convert FILETIME to Unix epoch seconds
     unix_time = (bigint_timestamp - 116444736000000000) / 10000000
     dt = datetime(1970, 1, 1) + timedelta(seconds=unix_time)
-    # Clamp the result to Pandas-supported datetime range
-    dt = clamp_datetime(dt)
-    return dt
+
+    # Replace the year with the current system year
+    current_year = datetime.now().year
+    dt_forced = dt.replace(year=current_year)
+
+    return dt_forced
 
 def get_most_recent_monday(date):
     days_ago = (date.weekday() + 1) % 7
@@ -111,10 +100,11 @@ def get_specified_date(date_str=None):
     if date_str:
         return datetime.strptime(date_str, "%Y%m%d")
     else:
-        # Return the current date and time if no date string is provided
         return datetime.now()
 
-def format_message(date, premium_sold, premium_captured, pcr, win_rate, expired_trades, stops, bad_slip, bad_slip_max, spx_last, negative_exp, weekly_pl, monthly_pl):
+def format_message(date, premium_sold, premium_captured, pcr, win_rate,
+                   expired_trades, stops, bad_slip, bad_slip_max, spx_last,
+                   negative_exp, weekly_pl, monthly_pl):
     ALIGN_WIDTH = 12
 
     premium_sold_str = f"${premium_sold:,.2f}"
@@ -177,7 +167,7 @@ def calculate_metrics(df_trades_ordered):
     bad_slip_max = bad_slip_data[bad_slip_condition].max() if bad_slip > 0 else 0
 
     negative_exp = df_trades_ordered[
-        (df_trades_ordered['ClosingProcessed'] == 0) & 
+        (df_trades_ordered['ClosingProcessed'] == 0) &
         (df_trades_ordered['ProfitLoss'] < 0)
     ].shape[0]
 
@@ -202,23 +192,18 @@ def input_with_timeout(prompt, timeout):
 
 def get_last_spx_value(connection, year, month, day):
     """
-    Retrieve the last SPX value for a given day from the DailyLog table.
-    :param connection: SQLite database connection.
-    :param year: Year of the date to query.
-    :param month: Month of the date to query.
-    :param day: Day of the date to query.
-    :return: The last SPX value for the day, or None if no entry is found.
+    Retrieve the last SPX value for a given day from the DailyLog table,
+    forcing the year of each row's timestamp to the current system year.
     """
     try:
         target_date = datetime(year, month, day)
         query = "SELECT DailyLogID, LogDate, PL, SPX FROM DailyLog WHERE LogDate IS NOT NULL;"
         df_daily_log = pd.read_sql_query(query, connection)
 
-        # Convert each row's LogDate into a datetime, clamped to avoid OverflowError
+        # Convert each row's LogDate to a datetime with the forced current year
         df_daily_log['LogDate'] = df_daily_log['LogDate'].apply(convert_to_human_readable)
 
-        # Now cast the entire column to datetime64 (some rows might still be out-of-range,
-        # but clamp_datetime helps avoid an OverflowError).
+        # Convert the column to datetime64 if needed (the forced year is now in range)
         df_daily_log['LogDate'] = pd.to_datetime(df_daily_log['LogDate'])
 
         # Filter to the requested date
