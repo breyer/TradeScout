@@ -56,5 +56,43 @@ jobs:
             3. Run `TradeScout.exe`
 
             See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full usage.
+
+            ---
+
+            ### What's Changed
+
+            #### Bug Fixes
+            - **Screenshot not posting** — `send_message_to_discord` was never called in the main flow; now wired up correctly
+            - **Wrong trade types** — queries used `'Put'`/`'Call'` but the database stores `'PutSpread'`/`'CallSpread'`; fixed throughout
+            - **Screenshot missing Pillow** — added `Pillow` and `pyscreeze` as explicit dependencies so PyInstaller bundles them
+            - **SQL injection** — all database queries now use parameterized statements
+            - **`delete_messages` wrong webhook** — was always using `webhooks[0]` for every message; now correctly paired per webhook
+            - **`get_most_recent_monday` Sunday bug** — formula returned the same Sunday instead of rolling back to Monday
+            - **No request timeout** — Discord HTTP calls could hang indefinitely; 10 s timeout added
+
+            #### New Features
+            - **IronFly trades** included in the weekly summary report
+            - **`--win max` is now the default** (was `restore`)
+            - **`--noimage` and `--debug` flags** added to the CLI
+            - **Automated Windows build & release** via GitHub Actions on every push to `main`
+
+            #### Performance
+            - Single database connection per run (was 4 separate open/close cycles)
+            - FILETIME column arithmetic vectorized with NumPy
+            - Bad-slippage calculation vectorized (removed row-by-row `apply`)
+
+            #### Dependencies (all updated to latest)
+            - `pandas` 1.5.3 → 3.0.2
+            - `requests` 2.28.1 → 2.33.1
+            - `pyautogui` 0.9.53 → 0.9.54
+            - `PyYAML` 6.0 → 6.0.3
+            - `pyscreeze` 1.0.1 *(new — required for screenshot support)*
+            - `Pillow` 12.2.0 *(new — required for screenshot support)*
+
+            #### Code Quality
+            - Comprehensive test suite added: 124 unit + integration tests
+            - Lazy imports for GUI packages so the tool can run headless in tests
+            - All `print()` calls replaced with `logging`
+            - Type hints added throughout
           files: TradeScout.7z
           make_latest: true
