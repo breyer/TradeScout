@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 FILETIME_EPOCH_OFFSET = 116_444_736_000_000_000  # 100-ns ticks between 1601-01-01 and 1970-01-01
 FILETIME_TICKS_PER_SECOND = 10_000_000
 
+# .NET DateTime tick constants (used by DailyLog)
+# TAT stores DailyLog.LogDate as .NET DateTime ticks: 100-ns intervals since 0001-01-01
+NET_TICKS_PER_SECOND = 10_000_000
+NET_EPOCH_OFFSET_SECONDS = 62_135_596_800  # seconds from 0001-01-01 to 1970-01-01
+
 
 def load_yaml_config() -> dict:
     """Load config.yaml from the config/ folder next to this script (or next to the executable)."""
@@ -237,20 +242,40 @@ def input_with_timeout(prompt: str, timeout: int) -> Optional[str]:
 def get_last_spx_value(
     connection: sqlite3.Connection, year: int, month: int, day: int
 ) -> Optional[float]:
-    """Return the last SPX value recorded in DailyLog for the given date, or None."""
-    try:
-        target_date = datetime(year, month, day)
-        query = "SELECT DailyLogID, LogDate, PL, SPX FROM DailyLog WHERE LogDate IS NOT NULL;"
-        df = pd.read_sql_query(query, connection)
-        df['LogDate'] = pd.to_datetime(df['LogDate'].apply(convert_to_human_readable))
-        df_day = df[df['LogDate'].dt.date == target_date.date()].sort_values('LogDate')
+    """
+    Return the last SPX value recorded in DailyLog for the given date, or None.
 
-        if not df_day.empty:
-            value = float(df_day.iloc[-1]['SPX'])
-            logger.info("Last SPX value for %s: %s", target_date.date(), value)
+    Queries using raw .NET DateTime tick bounds so entries from the same month/day
+    in other years are never confused with the target date (year-forcing cannot be
+    used here because it collapses all years onto the current year).
+    """
+    try:
+        epoch = datetime(1970, 1, 1)
+        start_ticks = int(
+            ((datetime(year, month, day) - epoch).total_seconds() + NET_EPOCH_OFFSET_SECONDS)
+            * NET_TICKS_PER_SECOND
+        )
+        end_ticks = int(
+            ((datetime(year, month, day, 23, 59, 59, 999999) - epoch).total_seconds()
+             + NET_EPOCH_OFFSET_SECONDS)
+            * NET_TICKS_PER_SECOND
+        )
+        query = """
+            SELECT SPX FROM DailyLog
+            WHERE LogDate BETWEEN ? AND ?
+              AND LogDate IS NOT NULL
+            ORDER BY LogDate DESC
+            LIMIT 1
+        """
+        cursor = connection.execute(query, (start_ticks, end_ticks))
+        row = cursor.fetchone()
+
+        if row and row[0] is not None:
+            value = float(row[0])
+            logger.info("Last SPX value for %04d-%02d-%02d: %s", year, month, day, value)
             return value
 
-        logger.info("No SPX value found for %s.", target_date.date())
+        logger.info("No SPX value found for %04d-%02d-%02d.", year, month, day)
         return None
 
     except sqlite3.Error as e:

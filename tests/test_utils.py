@@ -13,6 +13,8 @@ import pandas as pd
 from utils import (
     FILETIME_EPOCH_OFFSET,
     FILETIME_TICKS_PER_SECOND,
+    NET_EPOCH_OFFSET_SECONDS,
+    NET_TICKS_PER_SECOND,
     calculate_metrics,
     convert_to_human_readable,
     get_most_recent_monday,
@@ -274,8 +276,15 @@ class TestFormatMessage(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # get_last_spx_value
 # ---------------------------------------------------------------------------
+def _make_net_ticks(dt: datetime) -> int:
+    """Convert a datetime to .NET DateTime ticks (100-ns since 0001-01-01), matching the real TAT DB."""
+    epoch = datetime(1970, 1, 1)
+    return int(((dt - epoch).total_seconds() + NET_EPOCH_OFFSET_SECONDS) * NET_TICKS_PER_SECOND)
+
+
 class TestGetLastSpxValue(unittest.TestCase):
     def _make_dailylog_db(self, entries):
+        """entries: list of (datetime, spx) — stored as real .NET ticks matching the live DB format."""
         conn = sqlite3.connect(":memory:")
         conn.execute("""
             CREATE TABLE DailyLog (
@@ -283,60 +292,62 @@ class TestGetLastSpxValue(unittest.TestCase):
             )
         """)
         for i, (dt, spx) in enumerate(entries, 1):
-            ft = _make_filetime(dt)
-            conn.execute("INSERT INTO DailyLog VALUES (?, ?, 0, ?)", (i, ft, spx))
+            conn.execute("INSERT INTO DailyLog VALUES (?, ?, 0, ?)", (i, _make_net_ticks(dt), spx))
         conn.commit()
         return conn
 
     def test_returns_last_spx_for_date(self):
-        # convert_to_human_readable forces year to current year; pass current year here too
-        yr = datetime.now().year
         conn = self._make_dailylog_db([
-            (datetime(yr, 9, 23, 10, 0), 5700.0),
-            (datetime(yr, 9, 23, 16, 0), 5762.48),  # last entry → this value
+            (datetime(2026, 9, 23, 10, 0), 5700.0),
+            (datetime(2026, 9, 23, 16, 0), 5762.48),  # latest → correct value
         ])
         from utils import get_last_spx_value
-        result = get_last_spx_value(conn, yr, 9, 23)
+        result = get_last_spx_value(conn, 2026, 9, 23)
         conn.close()
         self.assertAlmostEqual(result, 5762.48)
 
     def test_returns_latest_timestamp_not_insertion_order(self):
-        # Regression: entries inserted with the LATER timestamp first.
-        # Before the fix, iloc[-1] returned the last-inserted row (5700.0).
-        # After the fix, sort_values('LogDate') ensures the latest timestamp wins (5762.48).
-        yr = datetime.now().year
+        # Regression: later timestamp inserted first — must still return the latest by time.
         conn = self._make_dailylog_db([
-            (datetime(yr, 9, 23, 16, 0), 5762.48),  # later timestamp, inserted first
-            (datetime(yr, 9, 23, 10, 0), 5700.0),   # earlier timestamp, inserted last
+            (datetime(2026, 9, 23, 16, 0), 5762.48),  # later timestamp, inserted first
+            (datetime(2026, 9, 23, 10, 0), 5700.0),   # earlier timestamp, inserted last
         ])
         from utils import get_last_spx_value
-        result = get_last_spx_value(conn, yr, 9, 23)
+        result = get_last_spx_value(conn, 2026, 9, 23)
+        conn.close()
+        self.assertAlmostEqual(result, 5762.48)
+
+    def test_does_not_confuse_same_day_different_year(self):
+        # Root-cause regression: 2024-09-23 and 2026-09-23 entries both present.
+        # Must return the value for the requested year only.
+        conn = self._make_dailylog_db([
+            (datetime(2024, 9, 23, 16, 0), 9999.0),   # last year — must NOT be returned
+            (datetime(2026, 9, 23, 10, 0), 5762.48),  # this year — correct value
+        ])
+        from utils import get_last_spx_value
+        result = get_last_spx_value(conn, 2026, 9, 23)
         conn.close()
         self.assertAlmostEqual(result, 5762.48)
 
     def test_returns_none_when_no_data(self):
         conn = self._make_dailylog_db([])
         from utils import get_last_spx_value
-        result = get_last_spx_value(conn, datetime.now().year, 9, 23)
+        result = get_last_spx_value(conn, 2026, 9, 23)
         conn.close()
         self.assertIsNone(result)
 
     def test_returns_none_on_sqlite_error(self):
-        """sqlite3.Error during query must return None, not raise."""
-        conn = self._make_dailylog_db([])
-        with unittest.mock.patch('utils.pd.read_sql_query', side_effect=sqlite3.Error("disk I/O error")):
-            from utils import get_last_spx_value
-            result = get_last_spx_value(conn, datetime.now().year, 9, 23)
-        conn.close()
+        mock_conn = unittest.mock.MagicMock()
+        mock_conn.execute.side_effect = sqlite3.Error("disk I/O error")
+        from utils import get_last_spx_value
+        result = get_last_spx_value(mock_conn, 2026, 9, 23)
         self.assertIsNone(result)
 
     def test_returns_none_on_unexpected_exception(self):
-        """Any unexpected exception during query must return None, not raise."""
-        conn = self._make_dailylog_db([])
-        with unittest.mock.patch('utils.pd.read_sql_query', side_effect=RuntimeError("unexpected")):
-            from utils import get_last_spx_value
-            result = get_last_spx_value(conn, datetime.now().year, 9, 23)
-        conn.close()
+        mock_conn = unittest.mock.MagicMock()
+        mock_conn.execute.side_effect = RuntimeError("unexpected")
+        from utils import get_last_spx_value
+        result = get_last_spx_value(mock_conn, 2026, 9, 23)
         self.assertIsNone(result)
 
 
