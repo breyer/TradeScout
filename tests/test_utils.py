@@ -299,6 +299,20 @@ class TestGetLastSpxValue(unittest.TestCase):
         conn.close()
         self.assertAlmostEqual(result, 5762.48)
 
+    def test_returns_latest_timestamp_not_insertion_order(self):
+        # Regression: entries inserted with the LATER timestamp first.
+        # Before the fix, iloc[-1] returned the last-inserted row (5700.0).
+        # After the fix, sort_values('LogDate') ensures the latest timestamp wins (5762.48).
+        yr = datetime.now().year
+        conn = self._make_dailylog_db([
+            (datetime(yr, 9, 23, 16, 0), 5762.48),  # later timestamp, inserted first
+            (datetime(yr, 9, 23, 10, 0), 5700.0),   # earlier timestamp, inserted last
+        ])
+        from utils import get_last_spx_value
+        result = get_last_spx_value(conn, yr, 9, 23)
+        conn.close()
+        self.assertAlmostEqual(result, 5762.48)
+
     def test_returns_none_when_no_data(self):
         conn = self._make_dailylog_db([])
         from utils import get_last_spx_value
