@@ -1,0 +1,60 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build EXE
+        run: |
+          pyinstaller --onefile --name TradeScout `
+            --hidden-import pyscreeze `
+            --hidden-import PIL `
+            --hidden-import PIL.Image `
+            Trade_Scout.py
+
+      - name: Package release archive
+        run: |
+          New-Item -ItemType Directory -Path release | Out-Null
+          Copy-Item dist\TradeScout.exe release\
+          Copy-Item config\config.demo.yaml release\config.demo.yaml
+          & "C:\Program Files\7-Zip\7z.exe" a TradeScout.7z .\release\*
+
+      - name: Get version (date-based)
+        id: version
+        run: echo "tag=v$(Get-Date -Format 'yyyy.MM.dd')" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: TradeScout ${{ steps.version.outputs.tag }}
+          body: |
+            ## TradeScout ${{ steps.version.outputs.tag }}
+
+            ### Installation
+            1. Download `TradeScout.7z` and extract it
+            2. Copy `config.demo.yaml` to `config.yaml` and fill in your `db_path` and Discord webhooks
+            3. Run `TradeScout.exe`
+
+            See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full usage.
+          files: TradeScout.7z
+          make_latest: true
