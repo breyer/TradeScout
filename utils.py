@@ -243,7 +243,7 @@ def get_last_spx_value(
         query = "SELECT DailyLogID, LogDate, PL, SPX FROM DailyLog WHERE LogDate IS NOT NULL;"
         df = pd.read_sql_query(query, connection)
         df['LogDate'] = pd.to_datetime(df['LogDate'].apply(convert_to_human_readable))
-        df_day = df[df['LogDate'].dt.date == target_date.date()]
+        df_day = df[df['LogDate'].dt.date == target_date.date()].sort_values('LogDate')
 
         if not df_day.empty:
             value = float(df_day.iloc[-1]['SPX'])

@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-04-03T11:07:03.653Z",
+      "error_message": "Incorrect value in code",
+      "file": "Trade_Scout.py",
+      "root_cause": "Had 'Put'",
+      "fix": "Changed to 'PutSpread'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T11:07:03.653Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-04-03T11:07:19.728Z",
+      "error_message": "Significant refactor of ",
+      "file": "tests/test_integration.py",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 21→30 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T11:07:19.728Z"
+    },
+    {
+      "id": "bug-003",
+      "timestamp": "2026-04-03T11:07:44.108Z",
+      "error_message": "Incorrect value in code",
+      "file": "tests/test_trade_scout.py",
+      "root_cause": "Had 'Put'",
+      "fix": "Changed to 'PutSpread'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T11:07:44.108Z"
+    },
+    {
+      "id": "bug-004",
+      "timestamp": "2026-04-03T11:17:34.113Z",
+      "error_message": "Wrong reference: Union should be Optional",
+      "file": "db_handler.py",
+      "root_cause": "Used \"Union\" instead of \"Optional\"",
+      "fix": "Changed Union → Optional",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T11:17:34.113Z"
+    },
+    {
+      "id": "bug-005",
+      "timestamp": "2026-04-03T17:41:05.524Z",
+      "error_message": "Significant refactor of ",
+      "file": "utils.py",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 10→14 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T17:41:05.524Z"
+    }
+    ,{
+      "id": "bug-006",
+      "timestamp": "2026-04-03T23:20:00.000Z",
+      "error_message": "SPX value wrong: posted 6581.56, correct value was 6582.69 for 2026-04-02",
+      "file": "utils.py",
+      "root_cause": "get_last_spx_value used df_day.iloc[-1] without sorting by LogDate first. DailyLog has multiple entries per day; iloc[-1] picks the last row by DB insertion order, not the latest by timestamp.",
+      "fix": "Added .sort_values('LogDate') before .iloc[-1] so the entry with the latest timestamp is always returned.",
+      "tags": ["spx", "wrong-value", "sorting", "dailylog"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T23:20:00.000Z"
+    }
+  ]
+}
