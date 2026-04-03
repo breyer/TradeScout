@@ -191,6 +191,70 @@ class TestConnectDb(unittest.TestCase):
             with connect_db():
                 pass
 
+    def test_retries_then_succeeds(self):
+        """Fail twice with OperationalError, succeed on the third attempt."""
+        import tempfile, os
+        db_file = tempfile.NamedTemporaryFile(suffix='.db3', delete=False)
+        db_file.close()
+        try:
+            call_count = {'n': 0}
+            real_connect = sqlite3.connect
+
+            def flaky_connect(path):
+                call_count['n'] += 1
+                if call_count['n'] < 3:
+                    raise sqlite3.OperationalError("locked")
+                return real_connect(path)
+
+            with patch('db_handler.load_config', return_value={'db_path': db_file.name}), \
+                 patch('db_handler.sqlite3.connect', side_effect=flaky_connect), \
+                 patch('db_handler.time.sleep'):
+                from db_handler import connect_db
+                with connect_db(retries=5, delay=0) as conn:
+                    self.assertIsNotNone(conn)
+            self.assertEqual(call_count['n'], 3)
+        finally:
+            os.unlink(db_file.name)
+
+    def test_raises_connection_error_after_all_retries_exhausted(self):
+        """Always raise OperationalError → ConnectionError after retries."""
+        import tempfile, os
+        db_file = tempfile.NamedTemporaryFile(suffix='.db3', delete=False)
+        db_file.close()
+        try:
+            with patch('db_handler.load_config', return_value={'db_path': db_file.name}), \
+                 patch('db_handler.sqlite3.connect', side_effect=sqlite3.OperationalError("locked")), \
+                 patch('db_handler.time.sleep'):
+                from db_handler import connect_db
+                with self.assertRaises(ConnectionError):
+                    with connect_db(retries=3, delay=0):
+                        pass
+        finally:
+            os.unlink(db_file.name)
+
+
+class TestGetTradesByTypeDirectConnection(unittest.TestCase):
+    """Verify get_trades_by_type works when a connection is passed directly."""
+
+    def test_uses_provided_connection_without_calling_connect_db(self):
+        conn = _build_test_db()
+        with patch('db_handler.connect_db') as mock_connect:
+            df = get_trades_by_type('Put', date(2024, 9, 23), connection=conn)
+            mock_connect.assert_not_called()
+        conn.close()
+        self.assertEqual(len(df), 2)
+
+    def test_returns_same_results_as_patched_path(self):
+        """Results via direct connection must match results via patched connect_db."""
+        conn1 = _build_test_db()
+        conn2 = _build_test_db()
+        with patch('db_handler.connect_db', _mock_connect(conn2)):
+            df_patched = get_trades_by_type('Put', date(2024, 9, 23))
+        df_direct = get_trades_by_type('Put', date(2024, 9, 23), connection=conn1)
+        conn1.close()
+        self.assertEqual(len(df_direct), len(df_patched))
+        self.assertAlmostEqual(df_direct['PL'].sum(), df_patched['PL'].sum())
+
 
 if __name__ == "__main__":
     unittest.main()

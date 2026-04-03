@@ -148,6 +148,12 @@ class TestCalculateTotalPL(unittest.TestCase):
         result = self._run(entries, "20240923", "20240923")
         self.assertAlmostEqual(result, 100.0)
 
+    def test_returns_none_on_database_error(self):
+        """sqlite3.Error during DB query must return None, not raise."""
+        with patch('PL_Summary.connect_db', side_effect=sqlite3.Error("disk I/O error")):
+            result = calculate_total_PL("20240923", "20240923")
+        self.assertIsNone(result)
+
 
 # ---------------------------------------------------------------------------
 # calculate_premium_captured_over_range

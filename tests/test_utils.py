@@ -3,6 +3,7 @@ import os
 import sqlite3
 import sys
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -317,6 +318,24 @@ class TestGetLastSpxValue(unittest.TestCase):
         conn = self._make_dailylog_db([])
         from utils import get_last_spx_value
         result = get_last_spx_value(conn, datetime.now().year, 9, 23)
+        conn.close()
+        self.assertIsNone(result)
+
+    def test_returns_none_on_sqlite_error(self):
+        """sqlite3.Error during query must return None, not raise."""
+        conn = self._make_dailylog_db([])
+        with unittest.mock.patch('utils.pd.read_sql_query', side_effect=sqlite3.Error("disk I/O error")):
+            from utils import get_last_spx_value
+            result = get_last_spx_value(conn, datetime.now().year, 9, 23)
+        conn.close()
+        self.assertIsNone(result)
+
+    def test_returns_none_on_unexpected_exception(self):
+        """Any unexpected exception during query must return None, not raise."""
+        conn = self._make_dailylog_db([])
+        with unittest.mock.patch('utils.pd.read_sql_query', side_effect=RuntimeError("unexpected")):
+            from utils import get_last_spx_value
+            result = get_last_spx_value(conn, datetime.now().year, 9, 23)
         conn.close()
         self.assertIsNone(result)
 
