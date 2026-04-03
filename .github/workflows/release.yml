@@ -38,15 +38,18 @@ jobs:
           Copy-Item config\config.demo.yaml release\config.demo.yaml
           & "C:\Program Files\7-Zip\7z.exe" a TradeScout.7z .\release\*
 
-      - name: Get version (date-based)
+      - name: Get version (date + short SHA)
         id: version
-        run: echo "tag=v$(Get-Date -Format 'yyyy.MM.dd')" >> $env:GITHUB_OUTPUT
+        run: |
+          $date = Get-Date -Format 'yyyy.MM.dd'
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          echo "tag=v$date-$sha" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: TradeScout ${{ steps.version.outputs.tag }}
+          name: TradeScout ${{ steps.version.outputs.tag }} (SPX sort fix + 132 tests)
           body: |
             ## TradeScout ${{ steps.version.outputs.tag }}
 
