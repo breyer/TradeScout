@@ -14,86 +14,107 @@ TradeScout computes multiple metrics for each trade, including:
 - **Win %**: The percentage of profitable trades.
 - **Expired Trades**: Number of trades that expired worthless.
 - **Stopped Trades**: Number of trades that were closed due to hitting their stop target.
-- **Bad Slip**: The number of trades where the slippage (difference between the close price and stop target) is greater than or equal to $0.50. The maximum slippage amount is also displayed.
-- **Negative Expired**: Number of trades where that expired but the trade had a negative profit.
-- **WTD PL (Week-to-Date Profit/Loss)**: The total premium captured from the most recent Monday to the current day.
-- **MTD PL (Month-to-Date Profit/Loss)**: The total premium captured from the first day of the current month to the current day.
+- **Bad Slip**: Number of trades where slippage exceeded $0.50, with the maximum shown.
+- **Negative Expired**: Number of trades that expired with a negative profit.
+- **WTD PL (Week-to-Date Profit/Loss)**: Total premium captured from the most recent Monday to the current day.
+- **MTD PL (Month-to-Date Profit/Loss)**: Total premium captured from the first day of the current month to the current day.
 
-## Installation
+## Download
 
-To install the dependencies required for TradeScout, use the following command:
+Pre-built Windows binaries are available on the [Releases](../../releases) page. Download `TradeScout.7z`, extract it, and follow the configuration steps below.
 
-```bash
-pip install -r requirements.txt
-```
+## Configuration
 
-The `requirements.txt` file includes the following dependencies:
-
-```text
-pandas==1.5.3
-requests==2.28.1
-pygetwindow==0.0.9
-pyautogui==0.9.53
-threading==0.1.0
-sqlite3==0.0.1
-PyYAML==6.0
-```
-
-Ensure that you have Python installed on your system and `pip` available for installing packages.
-
-### Webhook Setup for Discord
-
-You can configure one or more webhooks for sending notifications to a specific Discord channel or thread.
-
-Here’s an example of how the webhook is structured in the `config.yaml` file:
+Copy `config/config.demo.yaml` to `config/config.yaml` next to `TradeScout.exe` and fill in your values:
 
 ```yaml
-# Path to your database file
-# Note: use black slash "/" in path
-db_path: "data/data.db3"  
+# Path to your TAT database file (use forward slashes even on Windows)
+db_path: "../data.db3"
 
 webhooks:
   - url: "https://discord.com/api/webhooks/WEBHOOK_ID"
-    thread_id: "THREAD_ID"  # Optional: Sends the message to a specific thread if provided. If omitted, the message will go to the main channel.
+    thread_id: "THREAD_ID"   # optional: targets a specific thread
   - url: "https://discord.com/api/webhooks/ANOTHER_WEBHOOK"
-    thread_id: null  # No thread ID provided; the message will be sent to the main webhook channel.
+    thread_id: null           # omit to post to the main channel
 ```
 
-#### Notes:
-- **db_path**: This specifies the location of the SQLite database file of TAT (look for a folder called LocalState).
-- **webhooks**: You can configure multiple webhooks for different notifications. Each webhook can optionally include a `thread_id` to target a specific thread in a Discord channel.
+**db_path** — find `data.db3` inside TAT's `LocalState` folder, e.g.:
+`C:\Users\<you>\AppData\Local\Packages\TradeAutomationToolbox_...\LocalState\`
 
-### Running TradeScout
-
-To run the TradeScout tool, use the following command:
-
-```bash
-python trade_scout.py --date YYYYMMDD --win restore
-```
-
-Where:
-- `--date YYYYMMDD`: Specifies the date for which trades should be processed (e.g., `20240920`). If omitted, the current date will be used.
-- `--win`: Adjusts the window size for the application before capturing a screenshot. `restore` restores the window to its original size, while `max` maximizes it.
-
-### Example Output
-
-Here’s an example of the output sent to Discord:
+## Usage
 
 ```
-2024 Sep 30 (Monday)
----------------------
-SPX Last  |  5,762.48
-Prem Sold | $14,660.00
-Prem Cap  | ($25,742.27)
-PCR       | -175.60%
-Win %     | 10.00%
-Exp : Stp | 1:9
-Bad Slip  | 7(4.50 max)
--ve Exprd | 0
-WTD PL    | ($25,742.27)
-MTD PL    | ($13,664.35)
+TradeScout.exe                    # today's trades, maximize window, with screenshot
+TradeScout.exe --date 20260402    # specific date (YYYYMMDD)
+TradeScout.exe --noimage          # skip screenshot
+TradeScout.exe --win restore      # restore window instead of maximizing
+TradeScout.exe --debug            # print to console, don't post to Discord
+```
+
+After posting, TradeScout will ask for 30 seconds whether you want to delete the message.
+
+## Example Output
+
+```
+2026 Apr 02 (Thursday)
+----------|------------
+SPX Last  |     6,582.69
+Prem Sold |    $3,695.00
+Prem Cap  |      $580.82
+PCR       |       15.72%
+Win %     |       77.78%
+Exp : Stp |         12:6
+Bad Slip  |            0
+-ve Exprd |            0
+WTD PL    |    $2,285.56
+MTD PL    |      ($8.23)
 ```
 
 ![Example Output](TradeScoutOutputExample.jpg)
 
-In this output, the SPX index, premium sold, premium captured, and other metrics are displayed, followed by a screenshot of the associated trading data.
+---
+
+## How to Compile Under Windows
+
+### Prerequisites
+
+- **Python 3.11** — download from [python.org](https://www.python.org/downloads/release/python-3119/). Check **"Add Python to PATH"** during install.
+- **7-Zip** — download from [7-zip.org](https://www.7-zip.org/) (needed to create the release archive).
+
+### Steps
+
+```powershell
+# 1. Clone the repository
+git clone https://github.com/breyer/TradeScout
+cd TradeScout
+
+# 2. Install dependencies
+pip install -r requirements.txt
+pip install pyinstaller
+
+# 3. Build the executable
+pyinstaller --onefile --name TradeScout `
+  --hidden-import pyscreeze `
+  --hidden-import PIL `
+  --hidden-import PIL.Image `
+  Trade_Scout.py
+
+# 4. Package for distribution
+mkdir release
+copy dist\TradeScout.exe release\
+copy config\config.demo.yaml release\config.demo.yaml
+"& 'C:\Program Files\7-Zip\7z.exe' a TradeScout.7z .\release\*"
+
+# The compiled EXE is at:  dist\TradeScout.exe
+# The release archive is:  TradeScout.7z
+```
+
+> **Note:** PyInstaller must be run on Windows to produce a Windows EXE — cross-compilation is not supported.
+
+### Directory Layout After Build
+
+```
+TradeScout.exe
+config\
+  config.yaml        ← copy from config.demo.yaml and fill in
+```

@@ -16,15 +16,27 @@ except ImportError:
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
 
-from db_handler import connect_db, get_spx_data_from_db, get_trades_by_type
-from discord_messenger import send_message_to_discord
-from utils import get_most_recent_monday
+from db_handler import connect_db, get_spx_data_from_db, get_trades, get_trades_by_type
+from discord_messenger import delete_messages, send_message_to_discord
+from PL_Summary import calculate_premium_captured_over_range
+from utils import (
+    calculate_metrics,
+    format_message,
+    get_last_spx_value,
+    get_most_recent_monday,
+    get_specified_date,
+    input_with_timeout,
+)
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Weekly summary report (kept for reference / future use)
+# ---------------------------------------------------------------------------
 
 def calculate_trade_stats(df: pd.DataFrame, trade_type: str) -> Dict:
     """
@@ -69,7 +81,7 @@ def calculate_trade_stats(df: pd.DataFrame, trade_type: str) -> Dict:
 
 
 def create_trade_scout_message(start_date: datetime) -> str:
-    """Build the formatted Discord message for the week starting at *start_date*."""
+    """Build a formatted weekly summary Discord message starting at *start_date*."""
     with connect_db() as conn:
         puts_df = get_trades_by_type('PutSpread', start_date, conn)
         calls_df = get_trades_by_type('CallSpread', start_date, conn)
@@ -88,11 +100,7 @@ def create_trade_scout_message(start_date: datetime) -> str:
 
     total_puts = int(puts_df['Contracts'].sum()) if not puts_df.empty else 0
     total_calls = int(calls_df['Contracts'].sum()) if not calls_df.empty else 0
-    pcr_display: str
-    if total_calls > 0:
-        pcr_display = f"{total_puts / total_calls:.2f}"
-    else:
-        pcr_display = "N/A"
+    pcr_display: str = f"{total_puts / total_calls:.2f}" if total_calls > 0 else "N/A"
 
     spx_close = spx_data['SPX_Close'].iloc[-1] if not spx_data.empty else 'N/A'
 
@@ -126,25 +134,63 @@ def create_trade_scout_message(start_date: datetime) -> str:
     return message
 
 
+# ---------------------------------------------------------------------------
+# Entry point — daily trade report (original format)
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="TradeScout: Analyze and report trade performance."
+        description="TradeScout: Analyze daily trades and post to Discord."
     )
     parser.add_argument(
-        '--start-date',
-        type=str,
-        help="Start date in YYYY-MM-DD format. Defaults to the most recent Monday.",
+        '--date', type=str, nargs='?', const=None,
+        help="Date in YYYYMMDD format (e.g. 20240920). Defaults to today.",
+    )
+    parser.add_argument(
+        '--win', type=str, choices=['max', 'restore'], default='max',
+        help="TAT window state before screenshot: max or restore (default: max).",
+    )
+    parser.add_argument(
+        '--noimage', action='store_true',
+        help="Skip the screenshot attachment.",
+    )
+    parser.add_argument(
+        '--debug', action='store_true',
+        help="Print message to console instead of posting to Discord.",
     )
     args = parser.parse_args()
 
-    if args.start_date:
-        try:
-            start_date: datetime = datetime.strptime(args.start_date, '%Y-%m-%d')
-        except ValueError:
-            logger.error("Date format must be YYYY-MM-DD.")
-            sys.exit(1)
-    else:
-        start_date = get_most_recent_monday()
+    specified_date = get_specified_date(args.date)
+    year, month, day = specified_date.year, specified_date.month, specified_date.day
 
-    message = create_trade_scout_message(start_date)
-    print(message)
+    with connect_db() as connection:
+        most_recent_monday = get_most_recent_monday(specified_date)
+        weekly_pl = calculate_premium_captured_over_range(
+            most_recent_monday, specified_date, connection
+        )
+
+        first_day_of_month = specified_date.replace(day=1)
+        monthly_pl = calculate_premium_captured_over_range(
+            first_day_of_month, specified_date, connection
+        )
+
+        df_trades_ordered = get_trades(connection, year, month, day)
+        (
+            premium_sold, premium_captured, pcr,
+            win_rate, expired_trades, stops,
+            bad_slip, bad_slip_max, negative_exp,
+        ) = calculate_metrics(df_trades_ordered)
+
+        spx_last = get_last_spx_value(connection, year, month, day)
+
+    formatted_message = format_message(
+        specified_date, premium_sold, premium_captured, pcr, win_rate,
+        expired_trades, stops, bad_slip, bad_slip_max, spx_last,
+        negative_exp, weekly_pl, monthly_pl,
+    )
+
+    message_ids = send_message_to_discord(formatted_message, args.noimage, args.win, args.debug)
+
+    user_input = input_with_timeout("Do you want to delete the posting? (Y/N): ", 30)
+    if user_input and user_input.strip().lower() in ['yes', 'y']:
+        delete_messages(message_ids)

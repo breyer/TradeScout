@@ -1,5 +1,7 @@
-pandas==1.5.3
-requests==2.28.1
+pandas==3.0.2
+requests==2.33.1
 pygetwindow==0.0.9
-pyautogui==0.9.53
-PyYAML==6.0
+pyautogui==0.9.54
+pyscreeze==1.0.1
+Pillow==12.2.0
+PyYAML==6.0.3
