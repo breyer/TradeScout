@@ -135,6 +135,18 @@ if __name__ == "__main__":
         type=str,
         help="Start date in YYYY-MM-DD format. Defaults to the most recent Monday.",
     )
+    parser.add_argument(
+        '--win',
+        type=str,
+        choices=['max', 'restore'],
+        default='max',
+        help="TAT window state before screenshot: max or restore (default: max).",
+    )
+    parser.add_argument(
+        '--noimage',
+        action='store_true',
+        help="Skip the screenshot attachment.",
+    )
     args = parser.parse_args()
 
     if args.start_date:
@@ -147,4 +159,5 @@ if __name__ == "__main__":
         start_date = get_most_recent_monday()
 
     message = create_trade_scout_message(start_date)
-    print(message)
+    logger.info("Sending report to Discord...")
+    send_message_to_discord(message, noimage=args.noimage, win=args.win)
