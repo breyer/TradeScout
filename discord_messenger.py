@@ -21,7 +21,7 @@ def load_webhooks() -> List[dict]:
 
 
 def send_message_to_discord(
-    message: str, noimage: bool, win: str, debug: bool
+    message: str, noimage: bool, win: str = 'max', debug: bool = False
 ) -> List[Optional[str]]:
     """
     Post *message* to all configured Discord webhooks.
