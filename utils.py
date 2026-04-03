@@ -21,6 +21,8 @@ FILETIME_TICKS_PER_SECOND = 10_000_000
 # TAT stores DailyLog.LogDate as .NET DateTime ticks: 100-ns intervals since 0001-01-01
 NET_TICKS_PER_SECOND = 10_000_000
 NET_EPOCH_OFFSET_SECONDS = 62_135_596_800  # seconds from 0001-01-01 to 1970-01-01
+REGULAR_SESSION_SPX_CUTOFF_HOUR = 16
+REGULAR_SESSION_SPX_CUTOFF_MINUTE = 15
 
 
 def load_yaml_config() -> dict:
@@ -248,6 +250,11 @@ def get_last_spx_value(
     Queries using raw .NET DateTime tick bounds so entries from the same month/day
     in other years are never confused with the target date (year-forcing cannot be
     used here because it collapses all years onto the current year).
+
+    TAT now continues writing same-date DailyLog rows after the regular cash close.
+    For Discord reporting we prefer the last regular-session SPX value (through a
+    small post-close buffer), falling back to the full-day last value only when
+    no regular-session rows exist for that date.
     """
     try:
         epoch = datetime(1970, 1, 1)
@@ -255,7 +262,23 @@ def get_last_spx_value(
             ((datetime(year, month, day) - epoch).total_seconds() + NET_EPOCH_OFFSET_SECONDS)
             * NET_TICKS_PER_SECOND
         )
-        end_ticks = int(
+        session_cutoff_ticks = int(
+            (
+                (
+                    datetime(
+                        year,
+                        month,
+                        day,
+                        REGULAR_SESSION_SPX_CUTOFF_HOUR,
+                        REGULAR_SESSION_SPX_CUTOFF_MINUTE,
+                    )
+                    - epoch
+                ).total_seconds()
+                + NET_EPOCH_OFFSET_SECONDS
+            )
+            * NET_TICKS_PER_SECOND
+        )
+        end_of_day_ticks = int(
             ((datetime(year, month, day, 23, 59, 59, 999999) - epoch).total_seconds()
              + NET_EPOCH_OFFSET_SECONDS)
             * NET_TICKS_PER_SECOND
@@ -267,8 +290,12 @@ def get_last_spx_value(
             ORDER BY LogDate DESC
             LIMIT 1
         """
-        cursor = connection.execute(query, (start_ticks, end_ticks))
+        cursor = connection.execute(query, (start_ticks, session_cutoff_ticks))
         row = cursor.fetchone()
+
+        if not row or row[0] is None:
+            cursor = connection.execute(query, (start_ticks, end_of_day_ticks))
+            row = cursor.fetchone()
 
         if row and row[0] is not None:
             value = float(row[0])

@@ -350,6 +350,25 @@ class TestGetLastSpxValue(unittest.TestCase):
         result = get_last_spx_value(mock_conn, 2026, 9, 23)
         self.assertIsNone(result)
 
+    def test_prefers_regular_session_close_over_late_same_day_after_hours_rows(self):
+        conn = self._make_dailylog_db([
+            (datetime(2026, 4, 2, 16, 3, 13), 6582.69),
+            (datetime(2026, 4, 2, 23, 46, 6), 6581.56),
+        ])
+        from utils import get_last_spx_value
+        result = get_last_spx_value(conn, 2026, 4, 2)
+        conn.close()
+        self.assertAlmostEqual(result, 6582.69)
+
+    def test_falls_back_to_full_day_when_no_regular_session_spx_exists(self):
+        conn = self._make_dailylog_db([
+            (datetime(2026, 4, 2, 18, 0, 0), 6500.25),
+        ])
+        from utils import get_last_spx_value
+        result = get_last_spx_value(conn, 2026, 4, 2)
+        conn.close()
+        self.assertAlmostEqual(result, 6500.25)
+
 
 if __name__ == "__main__":
     unittest.main()
