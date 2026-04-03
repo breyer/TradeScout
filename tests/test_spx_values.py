@@ -13,9 +13,12 @@ class TestSPXValues(unittest.TestCase):
     def setUp(self):
         """
         Attempt to connect directly to the database file specified in config.
-        If connection fails, skip the test.
+        If config or DB is missing, skip the test.
         """
-        self.config = load_config()
+        try:
+            self.config = load_config()
+        except FileNotFoundError as e:
+            self.skipTest(f"config.yaml not found: {e}")
         db_path = self.config.get('db_path', 'data/data.db3')
 
         if not os.path.exists(db_path):

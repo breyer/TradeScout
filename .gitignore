@@ -4,8 +4,9 @@ build/
 # Ignore the dist folder and all its contents
 dist/
 
-# Ignore the database file
-data/data.db3
+# Ignore database files (never commit personal TAT data)
+*.db3
+data/
 
 # Ignore PyInstaller spec files
 *.spec

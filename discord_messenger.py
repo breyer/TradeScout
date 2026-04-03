@@ -1,21 +1,40 @@
-import requests
+import logging
 import os
-from utils import take_screenshot_of_app, load_yaml_config
+from typing import List, Optional
 
-# Load webhooks from config.yaml
-def load_webhooks():
+import requests
+
+from utils import load_yaml_config, take_screenshot_of_app
+
+logger = logging.getLogger(__name__)
+
+REQUEST_TIMEOUT = 10  # seconds for all Discord HTTP calls
+
+
+def load_webhooks() -> List[dict]:
+    """Load and validate the webhooks list from config.yaml."""
     config = load_yaml_config()
-    return config['webhooks']
+    webhooks = config.get('webhooks')
+    if not webhooks:
+        raise ValueError("No 'webhooks' key found in config.yaml.")
+    return webhooks
 
-# Send message to Discord
-def send_message_to_discord(message, noimage, win, debug):
-    screenshot_path = None
+
+def send_message_to_discord(
+    message: str, noimage: bool, win: str, debug: bool
+) -> List[Optional[str]]:
+    """
+    Post *message* to all configured Discord webhooks.
+    Optionally attaches a screenshot of the TAT application window.
+
+    Returns a list of message IDs (one per webhook; None on failure).
+    """
+    screenshot_path: Optional[str] = None
     if not noimage:
-        # Take a screenshot and return the temporary file path
         screenshot_path = take_screenshot_of_app("Trade Automation Toolbox", win)
-    
-    message_ids = []
-    webhooks = load_webhooks()  # Load webhooks from config.yaml
+
+    message_ids: List[Optional[str]] = []
+    webhooks = load_webhooks()
 
     for webhook in webhooks:
         url = webhook["url"]
@@ -24,42 +43,54 @@ def send_message_to_discord(message, noimage, win, debug):
             url += f"?thread_id={thread_id}"
 
         payload = {"content": message}
-        response = None  # Initialize response variable
 
         try:
             if screenshot_path and os.path.isfile(screenshot_path):
                 with open(screenshot_path, "rb") as image_file:
                     files = {"file": (os.path.basename(screenshot_path), image_file)}
-                    response = requests.post(url, data=payload, files=files)
+                    response = requests.post(
+                        url, data=payload, files=files, timeout=REQUEST_TIMEOUT
+                    )
             else:
-                response = requests.post(url, data=payload)
+                response = requests.post(url, data=payload, timeout=REQUEST_TIMEOUT)
 
-            # Check if response is successful
-            if response.status_code not in [200, 204]:
-                print(f"Failed to send message to webhook {url}. Status code: {response.status_code}")
-                print(f"Response: {response.text}")
+            if response.status_code not in (200, 204):
+                logger.warning(
+                    "Failed to send to webhook %s. Status %d: %s",
+                    url, response.status_code, response.text,
+                )
                 message_ids.append(None)
             else:
                 try:
-                    response_data = response.json()
-                    message_id = response_data.get('id')
-                    message_ids.append(message_id)
+                    message_ids.append(response.json().get('id'))
                 except ValueError:
                     message_ids.append(None)
 
         except Exception as e:
-            print(f"Error while sending message to {url}: {e}")
+            logger.error("Error sending message to %s: %s", url, e)
             message_ids.append(None)
 
-    # Clean up the temporary screenshot file after all webhooks have been processed
     if screenshot_path and os.path.exists(screenshot_path):
         os.remove(screenshot_path)
 
     return message_ids
 
-# Delete messages from Discord
-def delete_messages(message_ids):
-    webhooks = load_webhooks()  # Load webhooks from config.yaml
-    for msg_id in message_ids:
-        url = f"{webhooks[0]['url']}/messages/{msg_id}"
-        requests.delete(url)
+
+def delete_messages(message_ids: List[Optional[str]]) -> None:
+    """
+    Delete previously sent Discord messages.
+    Each message ID is paired with its originating webhook.
+    """
+    webhooks = load_webhooks()
+    for msg_id, webhook in zip(message_ids, webhooks):
+        if msg_id is None:
+            continue
+        url = f"{webhook['url']}/messages/{msg_id}"
+        try:
+            response = requests.delete(url, timeout=REQUEST_TIMEOUT)
+            if response.status_code not in (200, 204):
+                logger.warning(
+                    "Failed to delete message %s. Status %d", msg_id, response.status_code
+                )
+        except Exception as e:
+            logger.error("Error deleting message %s: %s", msg_id, e)
