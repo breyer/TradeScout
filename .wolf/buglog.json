@@ -80,18 +80,83 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-03T17:41:05.524Z"
-    }
-    ,{
+    },
+    {
       "id": "bug-006",
       "timestamp": "2026-04-03T23:20:00.000Z",
       "error_message": "SPX value wrong: posted 6581.56, correct value was 6582.69 for 2026-04-02",
       "file": "utils.py",
       "root_cause": "get_last_spx_value used df_day.iloc[-1] without sorting by LogDate first. DailyLog has multiple entries per day; iloc[-1] picks the last row by DB insertion order, not the latest by timestamp.",
       "fix": "Added .sort_values('LogDate') before .iloc[-1] so the entry with the latest timestamp is always returned.",
-      "tags": ["spx", "wrong-value", "sorting", "dailylog"],
+      "tags": [
+        "spx",
+        "wrong-value",
+        "sorting",
+        "dailylog"
+      ],
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-03T23:20:00.000Z"
+    },
+    {
+      "id": "bug-007",
+      "timestamp": "2026-04-03T21:33:55.089Z",
+      "error_message": "Significant refactor of ",
+      "file": ".github/workflows/release.yml",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→6 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "yml"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T21:33:55.089Z"
+    },
+    {
+      "id": "bug-008",
+      "timestamp": "2026-04-03T21:47:03.334Z",
+      "error_message": "Significant refactor of ",
+      "file": "utils.py",
+      "root_cause": "10 lines replaced/restructured",
+      "fix": "Rewrote 25→45 lines (10 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T21:47:03.334Z"
+    },
+    {
+      "id": "bug-009",
+      "timestamp": "2026-04-03T22:14:22.398Z",
+      "error_message": "Significant refactor of ",
+      "file": "README.md",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 26→30 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-03T22:14:22.398Z"
+    },
+    {
+      "id": "bug-010",
+      "timestamp": "2026-04-04T00:00:00.000Z",
+      "error_message": "TradeScout.exe --help freezes with no output on Windows",
+      "file": ".github/workflows/release.yml",
+      "root_cause": "PyInstaller --onefile mode extracts ~40 MB to a temp directory on every launch. Windows Defender scans each extracted file, causing a 30-60 s hang before any output appears. The --help output only appears after extraction completes.",
+      "fix": "Switched from --onefile to --onedir. No extraction step on launch; EXE starts instantly from the pre-extracted folder.",
+      "tags": ["pyinstaller", "windows", "startup", "freeze", "defender"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-04T00:00:00.000Z"
     }
   ]
 }
