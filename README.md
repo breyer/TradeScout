@@ -21,7 +21,7 @@ TradeScout computes multiple metrics for each trade, including:
 
 ## Download
 
-Pre-built Windows binaries are available on the [Releases](../../releases) page. Download `TradeScout.7z`, extract it, and follow the configuration steps below.
+Pre-built Windows binaries are available on the [Releases](../../releases) page. Download `TradeScout.7z`, extract the **entire folder**, and run `TradeScout.exe` from inside it. Do not move the EXE out of the folder — it requires the bundled libraries alongside it.
 
 ## Configuration
 
@@ -92,8 +92,8 @@ cd TradeScout
 pip install -r requirements.txt
 pip install pyinstaller
 
-# 3. Build the executable
-pyinstaller --onefile --name TradeScout `
+# 3. Build the executable (--onedir for fast startup)
+pyinstaller --onedir --name TradeScout `
   --hidden-import pyscreeze `
   --hidden-import PIL `
   --hidden-import PIL.Image `
@@ -101,20 +101,24 @@ pyinstaller --onefile --name TradeScout `
 
 # 4. Package for distribution
 mkdir release
-copy dist\TradeScout.exe release\
+xcopy /E /I dist\TradeScout release
 copy config\config.demo.yaml release\config.demo.yaml
 "& 'C:\Program Files\7-Zip\7z.exe' a TradeScout.7z .\release\*"
 
-# The compiled EXE is at:  dist\TradeScout.exe
-# The release archive is:  TradeScout.7z
+# The compiled folder is at:  dist\TradeScout\
+# The release archive is:     TradeScout.7z
 ```
 
 > **Note:** PyInstaller must be run on Windows to produce a Windows EXE — cross-compilation is not supported.
+>
+> **Why `--onedir`?** The `--onefile` mode extracts ~40 MB to a temp directory on every launch; Windows Defender scans each file, causing a 30–60 s delay with no output before the tool responds. `--onedir` avoids this entirely — startup is near-instant.
 
 ### Directory Layout After Build
 
 ```
-TradeScout.exe
+TradeScout\
+  TradeScout.exe     ← run this
+  *.dll / *.pyd      ← bundled libraries (must stay in the same folder)
 config\
   config.yaml        ← copy from config.demo.yaml and fill in
 ```

@@ -25,7 +25,7 @@ jobs:
 
       - name: Build EXE
         run: |
-          pyinstaller --onefile --name TradeScout `
+          pyinstaller --onedir --name TradeScout `
             --hidden-import pyscreeze `
             --hidden-import PIL `
             --hidden-import PIL.Image `
@@ -34,7 +34,7 @@ jobs:
       - name: Package release archive
         run: |
           New-Item -ItemType Directory -Path release | Out-Null
-          Copy-Item dist\TradeScout.exe release\
+          Copy-Item -Recurse dist\TradeScout\* release\
           Copy-Item config\config.demo.yaml release\config.demo.yaml
           & "C:\Program Files\7-Zip\7z.exe" a TradeScout.7z .\release\*
 
@@ -49,7 +49,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: TradeScout ${{ steps.version.outputs.tag }} (SPX sort fix + 132 tests)
+          name: TradeScout ${{ steps.version.outputs.tag }} (SPX year fix + fast startup)
           body: |
             ## TradeScout ${{ steps.version.outputs.tag }}
 
@@ -65,6 +65,8 @@ jobs:
             ### What's Changed
 
             #### Bug Fixes
+            - **SPX wrong value** — `get_last_spx_value` now queries raw .NET DateTime tick bounds, completely bypassing the year-forcing logic that caused same month/day entries from prior years to be returned instead of the correct year's entry
+            - **EXE slow start / `--help` freezing** — switched from `--onefile` to `--onedir` PyInstaller mode; no more temp-dir extraction on launch, startup is near-instant
             - **Screenshot not posting** — `send_message_to_discord` was never called in the main flow; now wired up correctly
             - **Wrong trade types** — queries used `'Put'`/`'Call'` but the database stores `'PutSpread'`/`'CallSpread'`; fixed throughout
             - **Screenshot missing Pillow** — added `Pillow` and `pyscreeze` as explicit dependencies so PyInstaller bundles them
@@ -93,9 +95,12 @@ jobs:
             - `Pillow` 12.2.0 *(new — required for screenshot support)*
 
             #### Code Quality
-            - Comprehensive test suite added: 124 unit + integration tests
+            - Comprehensive test suite added: 132 unit + integration tests
             - Lazy imports for GUI packages so the tool can run headless in tests
             - All `print()` calls replaced with `logging`
             - Type hints added throughout
+
+            #### Installation Note
+            This release uses `--onedir` packaging. Extract `TradeScout.7z` and run `TradeScout.exe` from inside the extracted folder. Do not move the EXE out of the folder — it needs the bundled libraries alongside it.
           files: TradeScout.7z
           make_latest: true
