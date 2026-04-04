@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from typing import List, Optional
@@ -21,11 +22,18 @@ def load_webhooks() -> List[dict]:
 
 
 def send_message_to_discord(
-    message: str, noimage: bool, win: str = 'max', debug: bool = False
+    message: str,
+    noimage: bool,
+    win: str = 'max',
+    debug: bool = False,
+    chart_path: Optional[str] = None,
 ) -> List[Optional[str]]:
     """
     Post *message* to all configured Discord webhooks.
-    Optionally attaches a screenshot of the TAT application window.
+
+    Optionally attaches a screenshot of the TAT application window and/or a
+    chart PNG (*chart_path*).  When multiple files are present, Discord's
+    indexed multipart format (files[0], files[1]) is used with payload_json.
 
     Returns a list of message IDs (one per webhook; None on failure).
     """
@@ -36,23 +44,44 @@ def send_message_to_discord(
     message_ids: List[Optional[str]] = []
     webhooks = load_webhooks()
 
+    # Build the ordered list of (field_name, file_path) pairs to attach.
+    attachments = []
+    if screenshot_path and os.path.isfile(screenshot_path):
+        attachments.append(screenshot_path)
+    if chart_path and os.path.isfile(chart_path):
+        attachments.append(chart_path)
+
     for webhook in webhooks:
         url = webhook["url"]
         thread_id = webhook.get("thread_id")
         if thread_id:
             url += f"?thread_id={thread_id}"
 
-        payload = {"content": message}
-
         try:
-            if screenshot_path and os.path.isfile(screenshot_path):
-                with open(screenshot_path, "rb") as image_file:
-                    files = {"file": (os.path.basename(screenshot_path), image_file)}
+            if attachments:
+                file_handles = []
+                try:
+                    files = [
+                        (
+                            f"files[{i}]",
+                            (os.path.basename(p), open(p, "rb"), "image/png"),
+                        )
+                        for i, p in enumerate(attachments)
+                    ]
+                    file_handles = [entry[1][1] for entry in files]
                     response = requests.post(
-                        url, data=payload, files=files, timeout=REQUEST_TIMEOUT
+                        url,
+                        data={"payload_json": json.dumps({"content": message})},
+                        files=files,
+                        timeout=REQUEST_TIMEOUT,
                     )
+                finally:
+                    for fh in file_handles:
+                        fh.close()
             else:
-                response = requests.post(url, data=payload, timeout=REQUEST_TIMEOUT)
+                response = requests.post(
+                    url, json={"content": message}, timeout=REQUEST_TIMEOUT
+                )
 
             if response.status_code not in (200, 204):
                 logger.warning(

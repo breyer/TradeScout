@@ -21,11 +21,14 @@ from discord_messenger import delete_messages, send_message_to_discord
 from PL_Summary import calculate_premium_captured_over_range
 from utils import (
     calculate_metrics,
+    calculate_rolling_metrics,
     format_message,
+    format_rolling_section,
     get_last_spx_value,
     get_most_recent_monday,
     get_specified_date,
     input_with_timeout,
+    load_yaml_config,
 )
 
 load_dotenv()
@@ -160,8 +163,22 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    config = load_yaml_config()
+    features = config.get('features', {})
+
+    ec_cfg = features.get('equity_curve', {})
+    ec_enabled = ec_cfg.get('enabled', True)
+    ec_days = int(ec_cfg.get('days', 60))
+
+    rb_cfg = features.get('rolling_benchmarks', {})
+    rb_enabled = rb_cfg.get('enabled', True)
+    rb_windows = list(rb_cfg.get('windows', [5, 20, 60]))
+
     specified_date = get_specified_date(args.date)
     year, month, day = specified_date.year, specified_date.month, specified_date.day
+
+    chart_path: Optional[str] = None
+    rolling_section: str = ""
 
     with connect_db() as connection:
         most_recent_monday = get_most_recent_monday(specified_date)
@@ -183,13 +200,29 @@ if __name__ == "__main__":
 
         spx_last = get_last_spx_value(connection, year, month, day)
 
+        if ec_enabled:
+            from chart_generator import generate_equity_curve
+            chart_path = generate_equity_curve(connection, specified_date, ec_days)
+
+        if rb_enabled:
+            rolling = calculate_rolling_metrics(connection, specified_date, rb_windows)
+            rolling_section = format_rolling_section(rolling, rb_windows)
+
     formatted_message = format_message(
         specified_date, premium_sold, premium_captured, pcr, win_rate,
         expired_trades, stops, bad_slip, bad_slip_max, spx_last,
         negative_exp, weekly_pl, monthly_pl,
     )
 
-    message_ids = send_message_to_discord(formatted_message, args.noimage, args.win, args.debug)
+    if rolling_section:
+        formatted_message += rolling_section
+
+    message_ids = send_message_to_discord(
+        formatted_message, args.noimage, args.win, args.debug, chart_path
+    )
+
+    if chart_path and os.path.exists(chart_path):
+        os.remove(chart_path)
 
     user_input = input_with_timeout("Do you want to delete the posting? (Y/N): ", 30)
     if user_input and user_input.strip().lower() in ['yes', 'y']:

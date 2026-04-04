@@ -29,6 +29,8 @@ jobs:
             --hidden-import pyscreeze `
             --hidden-import PIL `
             --hidden-import PIL.Image `
+            --hidden-import matplotlib `
+            --hidden-import matplotlib.backends.backend_agg `
             Trade_Scout.py
 
       - name: Package release archive
@@ -49,7 +51,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: TradeScout ${{ steps.version.outputs.tag }} (SPX year fix + fast startup)
+          name: TradeScout ${{ steps.version.outputs.tag }} — Equity Curve & Rolling Benchmarks
           body: |
             ## TradeScout ${{ steps.version.outputs.tag }}
 
@@ -62,45 +64,52 @@ jobs:
 
             ---
 
-            ### What's Changed
+            ### What's New
 
-            #### Bug Fixes
-            - **SPX wrong value** — `get_last_spx_value` now queries raw .NET DateTime tick bounds, completely bypassing the year-forcing logic that caused same month/day entries from prior years to be returned instead of the correct year's entry
-            - **EXE slow start / `--help` freezing** — switched from `--onefile` to `--onedir` PyInstaller mode; no more temp-dir extraction on launch, startup is near-instant
-            - **Screenshot not posting** — `send_message_to_discord` was never called in the main flow; now wired up correctly
-            - **Wrong trade types** — queries used `'Put'`/`'Call'` but the database stores `'PutSpread'`/`'CallSpread'`; fixed throughout
-            - **Screenshot missing Pillow** — added `Pillow` and `pyscreeze` as explicit dependencies so PyInstaller bundles them
-            - **SQL injection** — all database queries now use parameterized statements
-            - **`delete_messages` wrong webhook** — was always using `webhooks[0]` for every message; now correctly paired per webhook
-            - **`get_most_recent_monday` Sunday bug** — formula returned the same Sunday instead of rolling back to Monday
-            - **No request timeout** — Discord HTTP calls could hang indefinitely; 10 s timeout added
+            #### 📈 Equity Curve Chart
+            TradeScout now generates a cumulative P&L equity curve and **attaches it as an image** to every daily Discord report.
 
-            #### New Features
-            - **IronFly trades** included in the weekly summary report
-            - **`--win max` is now the default** (was `restore`)
-            - **`--noimage` and `--debug` flags** added to the CLI
-            - **Automated Windows build & release** via GitHub Actions on every push to `main`
+            - Plots the last **60 calendar days** of trade P&L as a line chart with green/red fill above and below zero
+            - Dark-themed, clean layout — renders nicely in Discord's image preview
+            - Configurable look-back window via `config.yaml`
 
-            #### Performance
-            - Single database connection per run (was 4 separate open/close cycles)
-            - FILETIME column arithmetic vectorized with NumPy
-            - Bad-slippage calculation vectorized (removed row-by-row `apply`)
+            #### 📊 Rolling Performance Benchmarks
+            The daily report now includes a **rolling metrics table** appended below the main stats block, showing how today's numbers compare to your recent average:
 
-            #### Dependencies (all updated to latest)
-            - `pandas` 1.5.3 → 3.0.2
-            - `requests` 2.28.1 → 2.33.1
-            - `pyautogui` 0.9.53 → 0.9.54
-            - `PyYAML` 6.0 → 6.0.3
-            - `pyscreeze` 1.0.1 *(new — required for screenshot support)*
-            - `Pillow` 12.2.0 *(new — required for screenshot support)*
+            ```
+            ----------|--------|--------|--------
+            Rolling   |   5d   |  20d   |  60d
+            ----------|--------|--------|--------
+            PCR       | 82.1%  | 78.4%  | 76.9%
+            Win %     | 86.7%  | 84.2%  | 81.5%
+            Avg Day   |  $930  |  $810  |  $740
+            ```
 
-            #### Code Quality
-            - Comprehensive test suite added: 132 unit + integration tests
-            - Lazy imports for GUI packages so the tool can run headless in tests
-            - All `print()` calls replaced with `logging`
-            - Type hints added throughout
+            Windows default to 5 / 20 / 60 calendar days and are fully configurable.
 
-            #### Installation Note
+            #### ⚙️ Feature Flags in `config.yaml`
+            Both new features are **enabled by default** and can be toggled or tuned in `config.yaml`:
+
+            ```yaml
+            features:
+              equity_curve:
+                enabled: true
+                days: 60
+              rolling_benchmarks:
+                enabled: true
+                windows: [5, 20, 60]
+            ```
+
+            Set `enabled: false` for either feature to revert to the previous report style.
+
+            ---
+
+            ### Dependencies
+            - `matplotlib 3.10.1` *(new — required for equity curve chart)*
+
+            ---
+
+            ### Installation Note
             This release uses `--onedir` packaging. Extract `TradeScout.7z` and run `TradeScout.exe` from inside the extracted folder. Do not move the EXE out of the folder — it needs the bundled libraries alongside it.
           files: TradeScout.7z
           make_latest: true

@@ -128,6 +128,25 @@ def get_trades_by_type(
     return df
 
 
+def get_trades_range(
+    connection: sqlite3.Connection, start_date: datetime, end_date: datetime
+) -> pd.DataFrame:
+    """
+    Return trades for all days in [start_date, end_date] inclusive.
+    Columns: Year, Month, Day, ProfitLoss, TotalPremium, ClosingProcessed.
+    Used by equity curve and rolling benchmarks.
+    """
+    start_int = start_date.year * 10_000 + start_date.month * 100 + start_date.day
+    end_int = end_date.year * 10_000 + end_date.month * 100 + end_date.day
+    query = """
+        SELECT Year, Month, Day, ProfitLoss, TotalPremium, ClosingProcessed
+        FROM Trade
+        WHERE (Year * 10000 + Month * 100 + Day) BETWEEN ? AND ?
+          AND TATTradeID IS NOT NULL;
+    """
+    return pd.read_sql_query(query, connection, params=(start_int, end_int))
+
+
 def get_spx_data_from_db(
     connection: Optional[sqlite3.Connection] = None,
 ) -> pd.DataFrame:

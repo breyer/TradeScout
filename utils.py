@@ -223,6 +223,87 @@ def calculate_metrics(
     )
 
 
+def calculate_rolling_metrics(
+    connection: sqlite3.Connection,
+    target_date: datetime,
+    windows: list,
+) -> dict:
+    """
+    Compute PCR, win rate, and average daily P&L over each rolling window.
+
+    *windows* is a list of calendar-day look-back periods (e.g. [5, 20, 60]).
+    Returns {window_days: {"pcr": float, "win_rate": float, "avg_daily_pl": float}}.
+    Days with no trades are excluded from the trading-day denominator for avg_daily_pl.
+    """
+    from db_handler import get_trades_range  # lazy — avoids circular import at module level
+
+    max_window = max(windows)
+    start_date = target_date - timedelta(days=max_window - 1)
+    df_all = get_trades_range(connection, start_date, target_date)
+
+    result: dict = {}
+    target_int = target_date.year * 10_000 + target_date.month * 100 + target_date.day
+
+    for w in windows:
+        window_start = target_date - timedelta(days=w - 1)
+        window_start_int = (
+            window_start.year * 10_000 + window_start.month * 100 + window_start.day
+        )
+        date_key = df_all['Year'] * 10_000 + df_all['Month'] * 100 + df_all['Day']
+        df_w = df_all[date_key.between(window_start_int, target_int)]
+
+        if df_w.empty:
+            result[w] = {"pcr": 0.0, "win_rate": 0.0, "avg_daily_pl": 0.0}
+            continue
+
+        total_premium = df_w['TotalPremium'].sum()
+        total_captured = df_w['ProfitLoss'].sum()
+        pcr = (total_captured / total_premium * 100) if total_premium != 0 else 0.0
+        win_rate = float((df_w['ProfitLoss'] > 0).mean() * 100)
+
+        trading_days = df_w[['Year', 'Month', 'Day']].drop_duplicates().shape[0]
+        avg_daily_pl = total_captured / trading_days if trading_days > 0 else 0.0
+
+        result[w] = {"pcr": pcr, "win_rate": win_rate, "avg_daily_pl": avg_daily_pl}
+
+    return result
+
+
+def format_rolling_section(rolling: dict, windows: list) -> str:
+    """
+    Format rolling benchmark metrics as a fixed-width Discord code block.
+
+    Renders a compact table with one column per window (e.g. 5d / 20d / 60d)
+    and rows for PCR, Win %, and Avg daily P&L.
+    """
+    col_w = 8
+    cols = [f"{w}d" for w in windows]
+
+    sep = "----------|" + "|".join("-" * col_w for _ in windows)
+    header = f"{'Rolling':<10}|" + "|".join(f"{c:^{col_w}}" for c in cols)
+
+    def _row(label: str, values: list) -> str:
+        return f"{label:<10}|" + "|".join(f"{v:^{col_w}}" for v in values)
+
+    pcr_vals = [f"{rolling[w]['pcr']:.1f}%" for w in windows]
+    win_vals = [f"{rolling[w]['win_rate']:.1f}%" for w in windows]
+    pl_vals = [
+        f"(${abs(rolling[w]['avg_daily_pl']):,.0f})" if rolling[w]['avg_daily_pl'] < 0
+        else f"${rolling[w]['avg_daily_pl']:,.0f}"
+        for w in windows
+    ]
+
+    lines = [
+        sep,
+        header,
+        sep,
+        _row("PCR", pcr_vals),
+        _row("Win %", win_vals),
+        _row("Avg Day", pl_vals),
+    ]
+    return "\n\n```\n" + "\n".join(lines) + "\n```"
+
+
 def input_with_timeout(prompt: str, timeout: int) -> Optional[str]:
     """Read a line from stdin with a timeout; returns None if the timeout expires."""
     answer: list = [None]
