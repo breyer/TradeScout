@@ -218,13 +218,13 @@ Function PageWebhookLeave
     StrCpy $WebhookURL ""
   ${EndIf}
 
-  ; Validate non-empty input
+  ; Validate non-empty input has the correct prefix
   ${If} $WebhookURL != ""
-    StrLen $0 $WebhookURL
-    ${If} $0 < 30
+    StrCpy $0 $WebhookURL 34
+    ${If} $0 != "https://discord.com/api/webhooks/"
       MessageBox MB_OK|MB_ICONEXCLAMATION \
-        "The URL looks too short. A Discord webhook URL starts with:$\r$\n\
-https://discord.com/api/webhooks/"
+        "Please enter a valid Discord webhook URL.$\r$\n\
+It must start with: https://discord.com/api/webhooks/"
       Abort
     ${EndIf}
   ${EndIf}

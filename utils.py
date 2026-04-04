@@ -129,6 +129,37 @@ def get_specified_date(date_str: Optional[str] = None) -> datetime:
     return datetime.now()
 
 
+def should_post_equity_curve(target_date: datetime, connection) -> bool:
+    """
+    Return True if the equity curve chart should be attached today.
+
+    The chart is posted on Fridays. If the most recent Friday was a closed
+    market day (holiday), it is posted on the first open market day after
+    that Friday instead.
+    """
+    from db_handler import get_trading_days_in_range, is_trading_day  # lazy — avoids circular import
+
+    dow = target_date.weekday()  # 0=Mon … 4=Fri
+
+    if dow == 4:
+        return True
+
+    # Find the most recent Friday before target_date
+    days_back = (dow - 4) % 7  # e.g. Mon(0)→3, Tue(1)→4, Wed(2)→5, Thu(3)→6
+    last_friday = target_date - timedelta(days=days_back)
+
+    if is_trading_day(connection, last_friday):
+        return False  # Friday was open; next post is next Friday
+
+    # Friday was closed — is today the first trading day after it?
+    days_between = get_trading_days_in_range(
+        connection,
+        last_friday + timedelta(days=1),
+        target_date - timedelta(days=1),
+    )
+    return len(days_between) == 0
+
+
 def format_message(
     date: datetime,
     premium_sold: float,

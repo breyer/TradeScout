@@ -370,5 +370,110 @@ class TestGetLastSpxValue(unittest.TestCase):
         self.assertAlmostEqual(result, 6500.25)
 
 
+# ---------------------------------------------------------------------------
+# should_post_equity_curve
+# ---------------------------------------------------------------------------
+class TestShouldPostEquityCurve(unittest.TestCase):
+    """
+    Dates used:
+      2026-04-03 = Friday  (weekday 4)
+      2026-04-06 = Monday  (weekday 0)
+      2026-04-07 = Tuesday (weekday 1)
+      2026-04-08 = Wednesday (weekday 2)
+    """
+
+    def _conn_with_trade(self, year, month, day):
+        """Return an in-memory connection with one trade on the given date."""
+        conn = sqlite3.connect(":memory:")
+        conn.execute("""
+            CREATE TABLE Trade (
+                TradeID INTEGER PRIMARY KEY,
+                DateOpened INTEGER, DateClosed INTEGER,
+                TradeType TEXT,
+                ShortPut REAL, LongPut REAL, ShortCall REAL, LongCall REAL,
+                Qty INTEGER, StopType TEXT,
+                PriceOpen REAL, PriceStopTarget REAL,
+                ProfitLoss REAL, PriceClose REAL,
+                ClosingProcessed INTEGER, TotalPremium REAL,
+                Commission REAL, CommissionClose REAL,
+                Year INTEGER, Month INTEGER, Day INTEGER,
+                TATTradeID TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE DailyLog (
+                DailyLogID INTEGER PRIMARY KEY,
+                LogDate INTEGER, PL REAL, SPX REAL
+            )
+        """)
+        conn.execute(
+            "INSERT INTO Trade VALUES (1,0,0,'Put',0,0,0,0,1,'LIMIT',1,0.2,100,0.1,0,500,0,0,?,?,?,'T1')",
+            (year, month, day),
+        )
+        conn.commit()
+        return conn
+
+    def _empty_conn(self):
+        """Return an in-memory connection with no trades and no DailyLog rows."""
+        conn = sqlite3.connect(":memory:")
+        conn.execute("""
+            CREATE TABLE Trade (
+                TradeID INTEGER PRIMARY KEY,
+                DateOpened INTEGER, DateClosed INTEGER,
+                TradeType TEXT,
+                ShortPut REAL, LongPut REAL, ShortCall REAL, LongCall REAL,
+                Qty INTEGER, StopType TEXT,
+                PriceOpen REAL, PriceStopTarget REAL,
+                ProfitLoss REAL, PriceClose REAL,
+                ClosingProcessed INTEGER, TotalPremium REAL,
+                Commission REAL, CommissionClose REAL,
+                Year INTEGER, Month INTEGER, Day INTEGER,
+                TATTradeID TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE DailyLog (
+                DailyLogID INTEGER PRIMARY KEY,
+                LogDate INTEGER, PL REAL, SPX REAL
+            )
+        """)
+        conn.commit()
+        return conn
+
+    def test_friday_always_posts(self):
+        from utils import should_post_equity_curve
+        conn = self._empty_conn()
+        self.assertTrue(should_post_equity_curve(datetime(2026, 4, 3), conn))
+        conn.close()
+
+    def test_monday_friday_was_open_does_not_post(self):
+        from utils import should_post_equity_curve
+        # Friday 2026-04-03 had a trade → it was an open market day
+        conn = self._conn_with_trade(2026, 4, 3)
+        self.assertFalse(should_post_equity_curve(datetime(2026, 4, 6), conn))
+        conn.close()
+
+    def test_monday_friday_was_closed_no_days_between_posts(self):
+        from utils import should_post_equity_curve
+        # Friday 2026-04-03 had no trade (closed); no trades on the weekend → Mon posts
+        conn = self._empty_conn()
+        self.assertTrue(should_post_equity_curve(datetime(2026, 4, 6), conn))
+        conn.close()
+
+    def test_tuesday_friday_was_closed_monday_was_trading_day_does_not_post(self):
+        from utils import should_post_equity_curve
+        # Friday closed, Monday was open → Monday was the "first open day", Tuesday should not post
+        conn = self._conn_with_trade(2026, 4, 6)  # Monday trade only (Friday empty)
+        self.assertFalse(should_post_equity_curve(datetime(2026, 4, 7), conn))
+        conn.close()
+
+    def test_wednesday_midweek_does_not_post(self):
+        from utils import should_post_equity_curve
+        # Friday 2026-03-27 was open (has trade); Wednesday 2026-04-01 is mid-week → no post
+        conn = self._conn_with_trade(2026, 3, 27)
+        self.assertFalse(should_post_equity_curve(datetime(2026, 4, 1), conn))
+        conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from db_handler import get_recent_trading_days, get_spx_data_from_db, get_trades, get_trades_by_type, has_dailylog_rows
+from db_handler import get_recent_trading_days, get_spx_data_from_db, get_trades, get_trades_by_type, get_trading_days_in_range, has_dailylog_rows, is_trading_day
 from utils import FILETIME_EPOCH_OFFSET, FILETIME_TICKS_PER_SECOND, NET_EPOCH_OFFSET_SECONDS, NET_TICKS_PER_SECOND
 
 
@@ -397,6 +397,86 @@ class TestHasDailylogRows(unittest.TestCase):
     def test_end_of_day_boundary_is_inclusive(self):
         _insert_dailylog(self.conn, 1, datetime(2024, 9, 23, 23, 59, 59))
         self.assertTrue(has_dailylog_rows(self.conn, datetime(2024, 9, 23)))
+
+
+def _build_trade_and_dailylog_db() -> sqlite3.Connection:
+    """In-memory DB with both Trade and DailyLog tables."""
+    conn = _build_trade_only_db()
+    conn.execute("""
+        CREATE TABLE DailyLog (
+            DailyLogID INTEGER PRIMARY KEY,
+            LogDate INTEGER,
+            PL REAL,
+            SPX REAL
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+class TestIsTradingDay(unittest.TestCase):
+    def setUp(self):
+        self.conn = _build_trade_and_dailylog_db()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_true_when_trade_exists(self):
+        _insert_trade(self.conn, 1, 2024, 9, 23)
+        self.assertTrue(is_trading_day(self.conn, datetime(2024, 9, 23)))
+
+    def test_true_when_only_dailylog_exists(self):
+        _insert_dailylog(self.conn, 1, datetime(2024, 9, 23, 10, 0))
+        self.assertTrue(is_trading_day(self.conn, datetime(2024, 9, 23)))
+
+    def test_false_when_neither_trade_nor_dailylog(self):
+        self.assertFalse(is_trading_day(self.conn, datetime(2024, 9, 23)))
+
+    def test_false_for_different_date(self):
+        _insert_trade(self.conn, 1, 2024, 9, 23)
+        self.assertFalse(is_trading_day(self.conn, datetime(2024, 9, 24)))
+
+
+class TestGetTradingDaysInRange(unittest.TestCase):
+    def setUp(self):
+        self.conn = _build_trade_only_db()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_returns_days_within_range(self):
+        _insert_trade(self.conn, 1, 2024, 9, 23)
+        _insert_trade(self.conn, 2, 2024, 9, 24)
+        _insert_trade(self.conn, 3, 2024, 9, 25)
+        result = get_trading_days_in_range(
+            self.conn, datetime(2024, 9, 23), datetime(2024, 9, 25)
+        )
+        self.assertEqual(len(result), 3)
+
+    def test_excludes_days_outside_range(self):
+        _insert_trade(self.conn, 1, 2024, 9, 22)  # before start
+        _insert_trade(self.conn, 2, 2024, 9, 23)
+        _insert_trade(self.conn, 3, 2024, 9, 26)  # after end
+        result = get_trading_days_in_range(
+            self.conn, datetime(2024, 9, 23), datetime(2024, 9, 25)
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], datetime(2024, 9, 23))
+
+    def test_returns_empty_when_no_trades_in_range(self):
+        result = get_trading_days_in_range(
+            self.conn, datetime(2024, 9, 23), datetime(2024, 9, 25)
+        )
+        self.assertEqual(result, [])
+
+    def test_sorted_ascending(self):
+        _insert_trade(self.conn, 1, 2024, 9, 25)
+        _insert_trade(self.conn, 2, 2024, 9, 23)
+        result = get_trading_days_in_range(
+            self.conn, datetime(2024, 9, 23), datetime(2024, 9, 25)
+        )
+        self.assertEqual(result[0], datetime(2024, 9, 23))
+        self.assertEqual(result[1], datetime(2024, 9, 25))
 
 
 if __name__ == "__main__":

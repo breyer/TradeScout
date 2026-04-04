@@ -69,51 +69,79 @@ jobs:
           body: |
             ## TradeScout ${{ steps.version.outputs.tag }}
 
+            Reads your daily options trades from Trade Automation Toolbox (TAT) and posts a formatted performance summary to Discord — automatically, every trading day.
+
+            ---
+
             ### Installation
 
             #### Recommended — Windows Installer
             1. Download `TradeScout-Setup.exe` and run it
-            2. The installer auto-detects your TAT folder, asks for your Discord webhook URL, and optionally sets up a scheduled task to run at 4:15 PM (Eastern Time) on weekdays
+            2. The wizard will:
+               - Auto-detect your TAT installation and set the correct `data.db3` path
+               - Validate and save your Discord webhook URL
+               - Let you enable/disable the equity curve and rolling benchmarks
+               - Optionally create a Scheduled Task that runs at **4:35 PM ET** on weekdays
             3. Done — no manual config editing required
 
             #### Manual — Portable Archive
             1. Download `TradeScout.7z` and extract it
-            2. Copy `config.demo.yaml` to `config\config.yaml` and fill in `db_path` and your Discord webhook URL
+            2. Copy `config.demo.yaml` to `config.yaml` (next to `TradeScout.exe`) and set `db_path` to your TAT `data.db3`
             3. Run `TradeScout.exe`
 
-            See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full usage.
+            > `data.db3` is located at `%LOCALAPPDATA%\Packages\TradeAutomationToolbox_...\LocalState\`
+
+            See the [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full configuration reference.
 
             ---
 
-            ### What's New
+            ### What TradeScout Reports
 
-            #### 🪟 Windows Installer (`TradeScout-Setup.exe`)
-            - Auto-detects your TAT installation directory
-            - Collects your Discord webhook URL during setup (or you can add it later)
-            - Optional checkboxes to enable/disable Equity Curve and Rolling Benchmarks
-            - Optional Windows Scheduled Task at 4:15 PM ET on weekdays
-            - Clean uninstaller via Add/Remove Programs
+            Every trading day a Discord message is posted with:
 
-            #### 📅 Trading-Day Rolling Benchmarks
-            Rolling windows (5d / 20d / 60d) now count **trading days**, not calendar days.
-            Weekends and market holidays are automatically excluded.
+            - **SPX Last** — last index value for the session
+            - **Premium Sold / Captured / PCR** — premium metrics
+            - **Win %**, **Exp : Stp**, **Bad Slip**, **-ve Exprd** — trade quality
+            - **WTD PL / MTD PL** — week-to-date and month-to-date P&L
+            - **Rolling benchmarks** — PCR, Win %, and avg daily P&L over 5 / 20 / 60 **trading days**
+            - **Equity curve chart** — 60-day cumulative P&L chart attached every Friday (or the next open market day if Friday was a holiday)
 
-            #### 🚫 Skip Closed-Market Days
-            TradeScout detects when the market was closed (no trades and no DailyLog data)
-            and exits silently without posting. Configurable via `features.skip_closed_market`.
+            ---
 
-            #### ⚙️ Feature Flags in `config.yaml`
+            ### Feature Flags (`config.yaml`)
+
             ```yaml
             features:
               equity_curve:
                 enabled: true
-                days: 60
+                days: 60                   # look-back window for the chart
               rolling_benchmarks:
                 enabled: true
-                windows: [5, 20, 60]   # trading days
+                windows: [5, 20, 60]       # trading days
               skip_closed_market:
-                enabled: true
+                enabled: true              # exit silently on market holidays
             ```
+
+            ---
+
+            ### Changelog
+
+            #### Weekly Equity Curve
+            The equity curve chart is now attached on **Fridays only** (or the first open market day after a closed Friday). Previously it was attached every day.
+
+            #### Webhook URL Validation
+            The installer now validates that the entered URL starts with `https://discord.com/api/webhooks/` before proceeding.
+
+            #### Windows Installer
+            - Auto-detects TAT via the Windows app registry (no manual path hunting)
+            - Feature flag checkboxes during setup
+            - Clean uninstaller via Add/Remove Programs
+
+            #### Trading-Day Rolling Benchmarks
+            Rolling windows count **trading days**, not calendar days — weekends and market holidays are excluded automatically.
+
+            #### Skip Closed-Market Days
+            TradeScout detects when the market was closed (no trades and no DailyLog data) and exits silently.
           files: |
             TradeScout.7z
             TradeScout-Setup.exe

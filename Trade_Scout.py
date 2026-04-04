@@ -29,6 +29,7 @@ from utils import (
     get_specified_date,
     input_with_timeout,
     load_yaml_config,
+    should_post_equity_curve,
 )
 
 load_dotenv()
@@ -231,7 +232,7 @@ if __name__ == "__main__":
 
         spx_last = get_last_spx_value(connection, year, month, day)
 
-        if ec_enabled:
+        if ec_enabled and should_post_equity_curve(specified_date, connection):
             from chart_generator import generate_equity_curve
             chart_path = generate_equity_curve(connection, specified_date, ec_days)
 

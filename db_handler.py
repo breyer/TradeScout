@@ -186,6 +186,38 @@ def has_dailylog_rows(
     return cursor.fetchone()[0] > 0
 
 
+def is_trading_day(connection: sqlite3.Connection, date: datetime) -> bool:
+    """
+    Return True if the market was open on *date* — i.e. the Trade table has
+    at least one valid row OR DailyLog has rows for that date.
+    """
+    trades = get_trades(connection, date.year, date.month, date.day)
+    if not trades.empty:
+        return True
+    return has_dailylog_rows(connection, date)
+
+
+def get_trading_days_in_range(
+    connection: sqlite3.Connection, start_date: datetime, end_date: datetime
+) -> list:
+    """
+    Return all calendar dates (as datetime) in [start_date, end_date] inclusive
+    that had at least one valid trade in the Trade table, sorted ascending.
+    """
+    start_int = start_date.year * 10_000 + start_date.month * 100 + start_date.day
+    end_int = end_date.year * 10_000 + end_date.month * 100 + end_date.day
+    query = """
+        SELECT DISTINCT Year, Month, Day
+        FROM Trade
+        WHERE TATTradeID IS NOT NULL
+          AND (Year * 10000 + Month * 100 + Day) >= ?
+          AND (Year * 10000 + Month * 100 + Day) <= ?
+        ORDER BY (Year * 10000 + Month * 100 + Day) ASC
+    """
+    rows = connection.execute(query, (start_int, end_int)).fetchall()
+    return [datetime(int(r[0]), int(r[1]), int(r[2])) for r in rows]
+
+
 def get_trades_range(
     connection: sqlite3.Connection, start_date: datetime, end_date: datetime
 ) -> pd.DataFrame:

@@ -1,64 +1,100 @@
-
 # TradeScout
 
-**TradeScout** is a tool that integrates with trades from [Trade Automation Toolbox (TAT)](https://tradeautomationtoolbox.com/). It provides detailed analytics and metrics to track trade performance based on various parameters and outputs summaries to a configured Discord channel using webhooks.
+**TradeScout** reads your daily options trades from [Trade Automation Toolbox (TAT)](https://tradeautomationtoolbox.com/) and posts a formatted performance summary to Discord — automatically, every trading day.
 
 ## Features
 
-TradeScout computes multiple metrics for each trade, including:
+### Daily Report
+Every trading day TradeScout posts a Discord message with:
 
-- **SPX Last**: The last recorded value of the SPX index for the day.
-- **Premium Sold**: Total premium sold from all trades.
-- **Premium Captured**: Total premium captured from all trades (profits/losses).
-- **PCR (Premium Capture Rate)**: Percentage of premium captured relative to the total premium sold.
-- **Win %**: The percentage of profitable trades.
-- **Expired Trades**: Number of trades that expired worthless.
-- **Stopped Trades**: Number of trades that were closed due to hitting their stop target.
-- **Bad Slip**: Number of trades where slippage exceeded $0.50, with the maximum shown.
-- **Negative Expired**: Number of trades that expired with a negative profit.
-- **WTD PL (Week-to-Date Profit/Loss)**: Total premium captured from the most recent Monday to the current day.
-- **MTD PL (Month-to-Date Profit/Loss)**: Total premium captured from the first day of the current month to the current day.
+| Metric | Description |
+|--------|-------------|
+| **SPX Last** | Last SPX index value for the session |
+| **Prem Sold** | Total premium sold across all trades |
+| **Prem Cap** | Total premium captured (realized P&L) |
+| **PCR** | Premium Capture Rate — captured ÷ sold |
+| **Win %** | Percentage of winning trades |
+| **Exp : Stp** | Expired worthless : Stopped out count |
+| **Bad Slip** | Trades with slippage ≥ $0.50 (with worst shown) |
+| **-ve Exprd** | Trades that expired with a loss |
+| **WTD PL** | Week-to-date P&L (since last Monday) |
+| **MTD PL** | Month-to-date P&L |
 
-## Download
+### Rolling Benchmarks
+Inline rolling stats for the past **5 / 20 / 60 trading days** — weekends and market holidays excluded automatically.
 
-Pre-built Windows binaries are available on the [Releases](../../releases) page. Download `TradeScout.7z`, extract the **entire folder**, and run `TradeScout.exe` from inside it. Do not move the EXE out of the folder — it requires the bundled libraries alongside it.
+### Weekly Equity Curve
+A 60-day cumulative P&L chart is attached every **Friday** (or the next open market day if Friday was a holiday).
 
-## Configuration
+### Smart Skipping
+TradeScout detects market-closed days (no trades and no TAT DailyLog data) and exits silently — no empty posts.
 
-Copy `config/config.demo.yaml` to `config/config.yaml` next to `TradeScout.exe` and fill in your values:
+---
+
+## Installation
+
+### Recommended — Windows Installer
+
+1. Download `TradeScout-Setup.exe` from the [Releases](../../releases) page and run it.
+2. The installer:
+   - Auto-detects your TAT installation via the Windows app registry
+   - Sets the correct path to `data.db3` in `config.yaml`
+   - Asks for your Discord webhook URL (validated on entry)
+   - Lets you enable/disable the equity curve and rolling benchmarks
+   - Optionally creates a Windows Scheduled Task that runs at **4:35 PM ET** on weekdays
+3. Done — no manual config editing required.
+
+### Manual — Portable Archive
+
+1. Download `TradeScout.7z` from the [Releases](../../releases) page and extract it.
+2. Copy `config.demo.yaml` to `config.yaml` (in the same folder as `TradeScout.exe`) and fill in your values:
 
 ```yaml
-# Path to your TAT database file (use forward slashes even on Windows)
-db_path: "../data.db3"
+# Full path to your TAT database file
+# Find data.db3 at: %LOCALAPPDATA%\Packages\TradeAutomationToolbox_...\LocalState\
+db_path: 'C:\Users\you\AppData\Local\Packages\TradeAutomationToolbox_xxxx\LocalState\data.db3'
 
 webhooks:
   - url: "https://discord.com/api/webhooks/WEBHOOK_ID"
-    thread_id: "THREAD_ID"   # optional: targets a specific thread
+    thread_id: "THREAD_ID"   # optional — targets a specific thread
   - url: "https://discord.com/api/webhooks/ANOTHER_WEBHOOK"
     thread_id: null           # omit to post to the main channel
+
+features:
+  equity_curve:
+    enabled: true
+    days: 60
+  rolling_benchmarks:
+    enabled: true
+    windows: [5, 20, 60]   # trading days
+  skip_closed_market:
+    enabled: true
 ```
 
-**db_path** — find `data.db3` inside TAT's `LocalState` folder, e.g.:
-`C:\Users\<you>\AppData\Local\Packages\TradeAutomationToolbox_...\LocalState\`
+3. Run `TradeScout.exe`.
+
+---
 
 ## Usage
 
 ```
-TradeScout.exe                    # today's trades, maximize window, with screenshot
+TradeScout.exe                    # today's trades, with TAT screenshot
 TradeScout.exe --date 20260402    # specific date (YYYYMMDD)
-TradeScout.exe --noimage          # skip screenshot
-TradeScout.exe --win restore      # restore window instead of maximizing
+TradeScout.exe --noimage          # skip TAT screenshot
+TradeScout.exe --win restore      # restore TAT window instead of maximizing
 TradeScout.exe --debug            # print to console, don't post to Discord
 ```
 
-After posting, TradeScout will ask for 30 seconds whether you want to delete the message.
+After posting, TradeScout waits 30 seconds and asks if you want to delete the message.
+
+---
 
 ## Example Output
 
 ```
-2026 Apr 02 (Thursday)
+2026 Apr 04 (Friday)
 ----------|------------
-SPX Last  |     6,582.69
+SPX Last  |     5,396.63
 Prem Sold |    $3,695.00
 Prem Cap  |      $580.82
 PCR       |       15.72%
@@ -68,7 +104,15 @@ Bad Slip  |            0
 -ve Exprd |            0
 WTD PL    |    $2,285.56
 MTD PL    |      ($8.23)
+----------|-------|-------|-------
+Rolling   |   5d  |  20d  |  60d
+----------|-------|-------|-------
+PCR       | 18.3% | 22.1% | 19.8%
+Win %     | 80.0% | 76.5% | 74.2%
+Avg Day   |  $412 |  $388 |  $341
 ```
+
+On Fridays an equity curve chart is also attached:
 
 ![Example Output](TradeScoutOutputExample.jpg)
 
@@ -78,8 +122,9 @@ MTD PL    |      ($8.23)
 
 ### Prerequisites
 
-- **Python 3.11** — download from [python.org](https://www.python.org/downloads/release/python-3119/). Check **"Add Python to PATH"** during install.
-- **7-Zip** — download from [7-zip.org](https://www.7-zip.org/) (needed to create the release archive).
+- **Python 3.11** — [python.org](https://www.python.org/downloads/release/python-3119/) — check **"Add Python to PATH"**
+- **NSIS 3.09** — [nsis.sourceforge.io](https://nsis.sourceforge.io/) — needed to build the installer
+- **7-Zip** — [7-zip.org](https://www.7-zip.org/) — needed to create the portable archive
 
 ### Steps
 
@@ -88,37 +133,40 @@ MTD PL    |      ($8.23)
 git clone https://github.com/breyer/TradeScout
 cd TradeScout
 
-# 2. Install dependencies
+# 2. Install Python dependencies
 pip install -r requirements.txt
 pip install pyinstaller
 
-# 3. Build the executable (--onedir for fast startup)
+# 3. Build the executable
 pyinstaller --onedir --name TradeScout `
   --hidden-import pyscreeze `
   --hidden-import PIL `
   --hidden-import PIL.Image `
+  --hidden-import matplotlib `
+  --hidden-import matplotlib.backends.backend_agg `
   Trade_Scout.py
 
-# 4. Package for distribution
-mkdir release
-xcopy /E /I dist\TradeScout release
-copy config\config.demo.yaml release\config.demo.yaml
-"& 'C:\Program Files\7-Zip\7z.exe' a TradeScout.7z .\release\*"
+# 4. Build the installer
+cd installer
+makensis tradescout.nsi
+cd ..
 
-# The compiled folder is at:  dist\TradeScout\
-# The release archive is:     TradeScout.7z
+# 5. Build the portable archive
+New-Item -ItemType Directory -Path release | Out-Null
+Copy-Item dist\TradeScout release\ -Recurse
+Copy-Item config.demo.yaml release\
+& "C:\Program Files\7-Zip\7z.exe" a TradeScout.7z .\release\*
 ```
 
-> **Note:** PyInstaller must be run on Windows to produce a Windows EXE — cross-compilation is not supported.
->
-> **Why `--onedir`?** The `--onefile` mode extracts ~40 MB to a temp directory on every launch; Windows Defender scans each file, causing a 30–60 s delay with no output before the tool responds. `--onedir` avoids this entirely — startup is near-instant.
+> **Why `--onedir`?** The `--onefile` mode extracts ~40 MB to a temp folder on every launch;
+> Windows Defender scans each file, causing a 30–60 s startup delay.
+> `--onedir` avoids this entirely — startup is near-instant.
 
 ### Directory Layout After Build
 
 ```
 TradeScout\
-  TradeScout.exe     ← run this
-  *.dll / *.pyd      ← bundled libraries (must stay in the same folder)
-config\
-  config.yaml        ← copy from config.demo.yaml and fill in
+  TradeScout.exe     <- run this
+  config.yaml        <- copy from config.demo.yaml and fill in
+  *.dll / *.pyd      <- bundled libraries (must stay in same folder)
 ```
