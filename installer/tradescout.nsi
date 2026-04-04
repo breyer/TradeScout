@@ -43,8 +43,6 @@ Page custom PageFeatures PageFeaturesLeave
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\TradeScout.exe"
 !define MUI_FINISHPAGE_RUN_TEXT    "Launch TradeScout now"
-!define MUI_FINISHPAGE_SHOWREADME  "$INSTDIR\${CONFIG_FILE}"
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "Open config.yaml"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -353,7 +351,7 @@ from Windows Task Scheduler or by uninstalling TradeScout." \
     nsExec::ExecToLog \
       'schtasks /Create /TN "${TASK_NAME}" \
 /TR "\"$INSTDIR\TradeScout.exe\"" \
-/SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 16:15 /F'
+/SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 16:35 /F'
     FileOpen $0 "$INSTDIR\${TASK_MARKER}" w
     FileClose $0
 
