@@ -116,5 +116,5 @@ jobs:
             ```
           files: |
             TradeScout.7z
-            installer/TradeScout-Setup.exe
+            TradeScout-Setup.exe
           make_latest: true
