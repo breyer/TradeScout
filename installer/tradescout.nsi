@@ -344,7 +344,7 @@ Section "TradeScout" SecMain
   ; Scheduled Task
   MessageBox MB_YESNO|MB_ICONQUESTION \
     "Create a Windows Scheduled Task to run TradeScout automatically at \
-4:15 PM (Eastern Time) on weekdays?$\r$\n$\r$\nYou can remove it later \
+4:35 PM (Eastern Time) on weekdays?$\r$\n$\r$\nYou can remove it later \
 from Windows Task Scheduler or by uninstalling TradeScout." \
     IDNO SkipTask
 
