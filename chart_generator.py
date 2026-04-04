@@ -10,7 +10,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from db_handler import get_dailylog_for_date, get_trades, get_trades_range
+from db_handler import get_dailylog_for_date, get_trades_range
 
 logger = logging.getLogger(__name__)
 
@@ -21,41 +21,26 @@ def generate_daily_chart(
     """
     Generate a TAT-style intraday PnL timeline PNG for *target_date*.
 
-    Three lines, all on the same dollar axis:
-      - Blue step    : PremiumSold  (cumulative premium collected as trades open)
-      - Orange line  : PL           (running mark-to-market P&L from DailyLog)
-      - Yellow step  : Realized PL  (cumulative closed-trade P&L built from Trade table)
+    Two lines on the left dollar axis, SPX on a right axis:
+      - Blue step   : PremiumSold  (cumulative premium collected as trades open)
+      - Orange line : PL           (running mark-to-market P&L from DailyLog)
+      - Gray line   : SPX price    (right axis)
 
     Returns a temp file path (caller is responsible for cleanup), or None on failure.
     """
-    from utils import convert_to_human_readable  # lazy — avoids circular import
-
     df_log = get_dailylog_for_date(connection, target_date)
     if df_log.empty:
         logger.info("No DailyLog data for daily chart on %s.", target_date.date())
         return None
 
-    # Build realized PL staircase from Trade closes
-    df_trades = get_trades(connection, target_date.year, target_date.month, target_date.day)
-    realized_times: list = []
-    realized_values: list = []
-    if not df_trades.empty:
-        closed = df_trades.dropna(subset=['DateClosed', 'ProfitLoss']).copy()
-        closed = closed.sort_values('DateClosed')
-        cumulative = 0.0
-        for _, row in closed.iterrows():
-            cumulative += float(row['ProfitLoss'])
-            realized_times.append(row['DateClosed'])
-            realized_values.append(cumulative)
-
     try:
-        bg_dark   = '#1e1e2e'
-        bg_fig    = '#16161e'
-        col_blue  = '#4a9eff'
+        bg_dark    = '#1e1e2e'
+        bg_fig     = '#16161e'
+        col_blue   = '#4a9eff'
         col_orange = '#ff8c42'
-        col_yellow = '#f0e040'
-        col_grid  = '#2a2a3a'
-        col_tick  = '#aaaaaa'
+        col_spx    = '#888899'
+        col_grid   = '#2a2a3a'
+        col_tick   = '#aaaaaa'
 
         fig, ax = plt.subplots(figsize=(14, 5))
         fig.patch.set_facecolor(bg_fig)
@@ -73,21 +58,11 @@ def generate_daily_chart(
             color=col_blue, linewidth=1.8, zorder=4, where='post', label='Premium Sold'
         )
 
-        # Yellow step: realized PL from Trade closes
-        if realized_times:
-            # Prepend a zero at the first log time so the step starts at 0
-            step_times = [df_log['time'].iloc[0]] + realized_times
-            step_values = [0.0] + realized_values
-            ax.step(
-                step_times, step_values,
-                color=col_yellow, linewidth=1.8, zorder=5, where='post', label='Realized PL'
-            )
-
         # Zero baseline
         ax.axhline(0, color='#555566', linewidth=0.8, linestyle='--', zorder=2)
 
         # Annotations: final PL + minimum PL
-        final_pl = float(df_log['PL'].iloc[-1])
+        final_pl   = float(df_log['PL'].iloc[-1])
         final_time = df_log['time'].iloc[-1]
         ax.annotate(
             f"Final PnL: ${final_pl:,.2f}",
@@ -98,8 +73,8 @@ def generate_daily_chart(
         )
         ax.plot(final_time, final_pl, 'o', color='#00e676', markersize=6, zorder=6)
 
-        min_idx = df_log['PL'].idxmin()
-        min_pl  = float(df_log['PL'].iloc[min_idx])
+        min_idx  = df_log['PL'].idxmin()
+        min_pl   = float(df_log['PL'].iloc[min_idx])
         min_time = df_log['time'].iloc[min_idx]
         if min_pl < 0:
             ax.annotate(
@@ -110,7 +85,19 @@ def generate_daily_chart(
                 va='top',
             )
 
-        # Axes formatting
+        # Right axis: SPX
+        ax_spx = ax.twinx()
+        ax_spx.plot(
+            df_log['time'], df_log['SPX'],
+            color=col_spx, linewidth=1.0, zorder=2, label='SPX', alpha=0.7
+        )
+        ax_spx.set_facecolor(bg_dark)
+        ax_spx.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f'{v:,.0f}'))
+        ax_spx.tick_params(axis='y', colors=col_spx, labelsize=9)
+        ax_spx.spines['right'].set_color('#3a3a4a')
+        ax_spx.spines['top'].set_visible(False)
+
+        # Left axis formatting
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
         ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
         fig.autofmt_xdate(rotation=0, ha='center')
@@ -130,7 +117,11 @@ def generate_daily_chart(
         ax.spines['right'].set_visible(False)
         ax.tick_params(axis='both', colors=col_tick, labelsize=9)
 
+        # Combined legend from both axes
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax_spx.get_legend_handles_labels()
         ax.legend(
+            lines1 + lines2, labels1 + labels2,
             loc='lower right', fontsize=8,
             facecolor='#2a2a3a', edgecolor='#3a3a4a', labelcolor=col_tick,
         )
