@@ -9,8 +9,67 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from db_handler import get_spx_data_from_db, get_trades, get_trades_by_type
-from utils import FILETIME_EPOCH_OFFSET, FILETIME_TICKS_PER_SECOND
+from db_handler import get_recent_trading_days, get_spx_data_from_db, get_trades, get_trades_by_type, has_dailylog_rows
+from utils import FILETIME_EPOCH_OFFSET, FILETIME_TICKS_PER_SECOND, NET_EPOCH_OFFSET_SECONDS, NET_TICKS_PER_SECOND
+
+
+def _to_net_ticks(dt: datetime) -> int:
+    """Convert datetime to .NET DateTime ticks (100-ns since 0001-01-01), matching has_dailylog_rows."""
+    posix = (dt - datetime(1970, 1, 1)).total_seconds()
+    return int((posix + NET_EPOCH_OFFSET_SECONDS) * NET_TICKS_PER_SECOND)
+
+
+def _build_trade_only_db() -> sqlite3.Connection:
+    """In-memory DB with only a Trade table — used by get_recent_trading_days tests."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE Trade (
+            TradeID INTEGER PRIMARY KEY,
+            DateOpened INTEGER, DateClosed INTEGER,
+            TradeType TEXT,
+            ShortPut REAL, LongPut REAL, ShortCall REAL, LongCall REAL,
+            Qty INTEGER, StopType TEXT,
+            PriceOpen REAL, PriceStopTarget REAL,
+            ProfitLoss REAL, PriceClose REAL,
+            ClosingProcessed INTEGER, TotalPremium REAL,
+            Commission REAL, CommissionClose REAL,
+            Year INTEGER, Month INTEGER, Day INTEGER,
+            TATTradeID TEXT
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+def _insert_trade(conn, trade_id, year, month, day, tat_id='T1', pl=100.0):
+    conn.execute(
+        "INSERT INTO Trade VALUES (?,0,0,'Put',0,0,0,0,1,'LIMIT',1.0,0.2,?,0.1,0,500.0,0,0,?,?,?,?)",
+        (trade_id, pl, year, month, day, tat_id),
+    )
+    conn.commit()
+
+
+def _build_dailylog_db() -> sqlite3.Connection:
+    """In-memory DB with only a DailyLog table using .NET DateTime ticks."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute("""
+        CREATE TABLE DailyLog (
+            DailyLogID INTEGER PRIMARY KEY,
+            LogDate INTEGER,
+            PL REAL,
+            SPX REAL
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+def _insert_dailylog(conn, log_id, dt: datetime, pl=0.0, spx=5000.0):
+    conn.execute(
+        "INSERT INTO DailyLog VALUES (?, ?, ?, ?)",
+        (log_id, _to_net_ticks(dt), pl, spx),
+    )
+    conn.commit()
 
 
 def _to_filetime(dt: datetime) -> int:
@@ -254,6 +313,90 @@ class TestGetTradesByTypeDirectConnection(unittest.TestCase):
         conn1.close()
         self.assertEqual(len(df_direct), len(df_patched))
         self.assertAlmostEqual(df_direct['PL'].sum(), df_patched['PL'].sum())
+
+
+class TestGetRecentTradingDays(unittest.TestCase):
+    def setUp(self):
+        self.conn = _build_trade_only_db()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_returns_n_most_recent_trading_days(self):
+        for i, (y, m, d) in enumerate([(2024,9,23),(2024,9,24),(2024,9,25),(2024,9,26),(2024,9,27)], start=1):
+            _insert_trade(self.conn, i, y, m, d)
+        result = get_recent_trading_days(self.conn, datetime(2024, 9, 27), 5)
+        self.assertEqual(len(result), 5)
+        self.assertEqual(result[0], datetime(2024, 9, 23))
+        self.assertEqual(result[-1], datetime(2024, 9, 27))
+
+    def test_sorted_ascending_oldest_first(self):
+        _insert_trade(self.conn, 1, 2024, 9, 27)
+        _insert_trade(self.conn, 2, 2024, 9, 23)
+        _insert_trade(self.conn, 3, 2024, 9, 25)
+        result = get_recent_trading_days(self.conn, datetime(2024, 9, 27), 10)
+        dates = [r.date() for r in result]
+        self.assertEqual(dates, sorted(dates))
+
+    def test_skips_days_without_trades(self):
+        # Mon/Wed/Fri only — Tue/Thu have no trades
+        _insert_trade(self.conn, 1, 2024, 9, 23)  # Mon
+        _insert_trade(self.conn, 2, 2024, 9, 25)  # Wed
+        _insert_trade(self.conn, 3, 2024, 9, 27)  # Fri
+        result = get_recent_trading_days(self.conn, datetime(2024, 9, 27), 5)
+        self.assertEqual(len(result), 3)
+        self.assertIn(datetime(2024, 9, 23), result)
+        self.assertIn(datetime(2024, 9, 25), result)
+        self.assertIn(datetime(2024, 9, 27), result)
+
+    def test_fewer_days_than_requested_returns_all(self):
+        _insert_trade(self.conn, 1, 2024, 9, 23)
+        _insert_trade(self.conn, 2, 2024, 9, 24)
+        result = get_recent_trading_days(self.conn, datetime(2024, 9, 27), 10)
+        self.assertEqual(len(result), 2)
+
+    def test_no_trades_returns_empty_list(self):
+        result = get_recent_trading_days(self.conn, datetime(2024, 9, 27), 5)
+        self.assertEqual(result, [])
+
+    def test_target_date_is_inclusive(self):
+        _insert_trade(self.conn, 1, 2024, 9, 27)
+        result = get_recent_trading_days(self.conn, datetime(2024, 9, 27), 5)
+        self.assertIn(datetime(2024, 9, 27), result)
+
+    def test_excludes_null_tattradeid(self):
+        _insert_trade(self.conn, 1, 2024, 9, 23, tat_id=None)
+        result = get_recent_trading_days(self.conn, datetime(2024, 9, 27), 5)
+        self.assertEqual(result, [])
+
+
+class TestHasDailylogRows(unittest.TestCase):
+    def setUp(self):
+        self.conn = _build_dailylog_db()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_returns_true_when_rows_exist_for_date(self):
+        _insert_dailylog(self.conn, 1, datetime(2024, 9, 23, 10, 0))
+        self.assertTrue(has_dailylog_rows(self.conn, datetime(2024, 9, 23)))
+
+    def test_returns_false_when_no_rows(self):
+        self.assertFalse(has_dailylog_rows(self.conn, datetime(2024, 9, 23)))
+
+    def test_returns_false_for_different_date(self):
+        # Only Friday has data; querying Saturday returns False
+        _insert_dailylog(self.conn, 1, datetime(2024, 9, 20, 16, 0))  # Friday
+        self.assertFalse(has_dailylog_rows(self.conn, datetime(2024, 9, 21)))  # Saturday
+
+    def test_multiple_rows_same_day_returns_true(self):
+        _insert_dailylog(self.conn, 1, datetime(2024, 9, 23, 9, 30))
+        _insert_dailylog(self.conn, 2, datetime(2024, 9, 23, 16, 0))
+        self.assertTrue(has_dailylog_rows(self.conn, datetime(2024, 9, 23)))
+
+    def test_end_of_day_boundary_is_inclusive(self):
+        _insert_dailylog(self.conn, 1, datetime(2024, 9, 23, 23, 59, 59))
+        self.assertTrue(has_dailylog_rows(self.conn, datetime(2024, 9, 23)))
 
 
 if __name__ == "__main__":

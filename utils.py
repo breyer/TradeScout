@@ -235,21 +235,33 @@ def calculate_rolling_metrics(
     """
     Compute PCR, win rate, and average daily P&L over each rolling window.
 
-    *windows* is a list of calendar-day look-back periods (e.g. [5, 20, 60]).
+    *windows* is a list of trading-day look-back periods (e.g. [5, 20, 60]).
+    A "trading day" is any calendar day that has at least one valid trade in
+    the Trade table.  Weekends and market holidays are excluded automatically.
+
     Returns {window_days: {"pcr": float, "win_rate": float, "avg_daily_pl": float}}.
-    Days with no trades are excluded from the trading-day denominator for avg_daily_pl.
     """
-    from db_handler import get_trades_range  # lazy — avoids circular import at module level
+    from db_handler import get_recent_trading_days, get_trades_range  # lazy — avoids circular import
 
     max_window = max(windows)
-    start_date = target_date - timedelta(days=max_window - 1)
-    df_all = get_trades_range(connection, start_date, target_date)
+    trading_days = get_recent_trading_days(connection, target_date, max_window)
 
-    result: dict = {}
+    if not trading_days:
+        return {w: {"pcr": 0.0, "win_rate": 0.0, "avg_daily_pl": 0.0} for w in windows}
+
+    # One DB round-trip covers all windows.
+    df_all = get_trades_range(connection, trading_days[0], target_date)
     target_int = target_date.year * 10_000 + target_date.month * 100 + target_date.day
 
+    result: dict = {}
     for w in windows:
-        window_start = target_date - timedelta(days=w - 1)
+        # Slice the last w trading days (or all if fewer available).
+        window_days = trading_days[-w:] if len(trading_days) >= w else trading_days
+        if not window_days:
+            result[w] = {"pcr": 0.0, "win_rate": 0.0, "avg_daily_pl": 0.0}
+            continue
+
+        window_start = window_days[0]
         window_start_int = (
             window_start.year * 10_000 + window_start.month * 100 + window_start.day
         )
@@ -264,9 +276,7 @@ def calculate_rolling_metrics(
         total_captured = df_w['ProfitLoss'].sum()
         pcr = (total_captured / total_premium * 100) if total_premium != 0 else 0.0
         win_rate = float((df_w['ProfitLoss'] > 0).mean() * 100)
-
-        trading_days = df_w[['Year', 'Month', 'Day']].drop_duplicates().shape[0]
-        avg_daily_pl = total_captured / trading_days if trading_days > 0 else 0.0
+        avg_daily_pl = total_captured / len(window_days)
 
         result[w] = {"pcr": pcr, "win_rate": win_rate, "avg_daily_pl": avg_daily_pl}
 

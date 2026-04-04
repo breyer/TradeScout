@@ -128,6 +128,64 @@ def get_trades_by_type(
     return df
 
 
+def get_recent_trading_days(
+    connection: sqlite3.Connection, target_date: datetime, n: int
+) -> list:
+    """
+    Return the N most recent calendar dates (as datetime) that had at least one
+    valid trade on or before *target_date*, sorted ascending (oldest first).
+
+    Uses Trade.Year/Month/Day integer columns — no FILETIME conversion needed.
+    If fewer than N trading days exist, returns all available.
+    """
+    target_int = target_date.year * 10_000 + target_date.month * 100 + target_date.day
+    query = """
+        SELECT DISTINCT Year, Month, Day
+        FROM Trade
+        WHERE TATTradeID IS NOT NULL
+          AND (Year * 10000 + Month * 100 + Day) <= ?
+        ORDER BY (Year * 10000 + Month * 100 + Day) DESC
+        LIMIT ?
+    """
+    rows = connection.execute(query, (target_int, n)).fetchall()
+    days = [datetime(int(r[0]), int(r[1]), int(r[2])) for r in rows]
+    days.sort()
+    return days
+
+
+def has_dailylog_rows(
+    connection: sqlite3.Connection, target_date: datetime
+) -> bool:
+    """
+    Return True if DailyLog has any rows for *target_date*, False otherwise.
+
+    DailyLog.LogDate stores .NET DateTime ticks (100-ns intervals since
+    0001-01-01). The conversion reuses the same constants and formula as
+    get_last_spx_value() so that the tick range is consistent.
+    """
+    from utils import NET_EPOCH_OFFSET_SECONDS, NET_TICKS_PER_SECOND  # avoid circular at import time
+    epoch = datetime(1970, 1, 1)
+    start_ticks = int(
+        (
+            (datetime(target_date.year, target_date.month, target_date.day) - epoch).total_seconds()
+            + NET_EPOCH_OFFSET_SECONDS
+        )
+        * NET_TICKS_PER_SECOND
+    )
+    end_ticks = int(
+        (
+            (datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, 999999) - epoch).total_seconds()
+            + NET_EPOCH_OFFSET_SECONDS
+        )
+        * NET_TICKS_PER_SECOND
+    )
+    cursor = connection.execute(
+        "SELECT COUNT(*) FROM DailyLog WHERE LogDate BETWEEN ? AND ?",
+        (start_ticks, end_ticks),
+    )
+    return cursor.fetchone()[0] > 0
+
+
 def get_trades_range(
     connection: sqlite3.Connection, start_date: datetime, end_date: datetime
 ) -> pd.DataFrame:

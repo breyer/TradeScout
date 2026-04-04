@@ -16,7 +16,7 @@ except ImportError:
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
 
-from db_handler import connect_db, get_spx_data_from_db, get_trades, get_trades_by_type
+from db_handler import connect_db, get_spx_data_from_db, get_trades, get_trades_by_type, has_dailylog_rows
 from discord_messenger import delete_messages, send_message_to_discord
 from PL_Summary import calculate_premium_captured_over_range
 from utils import (
@@ -81,6 +81,30 @@ def calculate_trade_stats(df: pd.DataFrame, trade_type: str) -> Dict:
             "Total Contracts": str(total_contracts),
         },
     }
+
+
+def is_market_closed(
+    connection,
+    target_date: datetime,
+    features: dict,
+) -> bool:
+    """
+    Return True when TradeScout should skip posting for *target_date*.
+
+    Skipping happens only when ALL of the following are true:
+    - features.skip_closed_market.enabled is True (default)
+    - No trades exist in the Trade table for *target_date*
+    - No DailyLog rows exist for *target_date*
+
+    If trades are present (even without DailyLog data) the market is considered
+    open — the user may have entered manual trades on a short session day.
+    """
+    if not features.get('skip_closed_market', {}).get('enabled', True):
+        return False
+    trades = get_trades(connection, target_date.year, target_date.month, target_date.day)
+    if not trades.empty:
+        return False
+    return not has_dailylog_rows(connection, target_date)
 
 
 def create_trade_scout_message(start_date: datetime) -> str:
@@ -190,6 +214,13 @@ if __name__ == "__main__":
         monthly_pl = calculate_premium_captured_over_range(
             first_day_of_month, specified_date, connection
         )
+
+        if is_market_closed(connection, specified_date, features):
+            logger.info(
+                "Market closed on %s — no trades and no DailyLog entries. Skipping post.",
+                specified_date.strftime('%Y-%m-%d'),
+            )
+            sys.exit(0)
 
         df_trades_ordered = get_trades(connection, year, month, day)
         (

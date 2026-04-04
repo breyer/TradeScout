@@ -40,6 +40,20 @@ jobs:
           Copy-Item config\config.demo.yaml release\config.demo.yaml
           & "C:\Program Files\7-Zip\7z.exe" a TradeScout.7z .\release\*
 
+      - name: Build NSIS installer
+        run: |
+          choco install nsis --version=3.09 -y --no-progress
+          $env:PATH += ";C:\Program Files (x86)\NSIS"
+          $date = Get-Date -Format 'yyyy.MM.dd'
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $version = "v$date-$sha"
+          # Stage files where the NSI script expects them
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item dist\TradeScout.exe dist\TradeScout.exe -ErrorAction SilentlyContinue
+          Set-Location installer
+          makensis /DVERSION=$version tradescout.nsi
+          Set-Location ..
+
       - name: Get version (date + short SHA)
         id: version
         run: |
@@ -51,13 +65,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: TradeScout ${{ steps.version.outputs.tag }} — Equity Curve & Rolling Benchmarks
+          name: TradeScout ${{ steps.version.outputs.tag }}
           body: |
             ## TradeScout ${{ steps.version.outputs.tag }}
 
             ### Installation
+
+            #### Recommended — Windows Installer
+            1. Download `TradeScout-Setup.exe` and run it
+            2. The installer auto-detects your TAT folder, asks for your Discord webhook URL, and optionally sets up a scheduled task to run at 4:15 PM (Eastern Time) on weekdays
+            3. Done — no manual config editing required
+
+            #### Manual — Portable Archive
             1. Download `TradeScout.7z` and extract it
-            2. Copy `config.demo.yaml` to `config.yaml` and fill in your `db_path` and Discord webhooks
+            2. Copy `config.demo.yaml` to `config\config.yaml` and fill in `db_path` and your Discord webhook URL
             3. Run `TradeScout.exe`
 
             See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full usage.
@@ -66,30 +87,22 @@ jobs:
 
             ### What's New
 
-            #### 📈 Equity Curve Chart
-            TradeScout now generates a cumulative P&L equity curve and **attaches it as an image** to every daily Discord report.
+            #### 🪟 Windows Installer (`TradeScout-Setup.exe`)
+            - Auto-detects your TAT installation directory
+            - Collects your Discord webhook URL during setup (or you can add it later)
+            - Optional checkboxes to enable/disable Equity Curve and Rolling Benchmarks
+            - Optional Windows Scheduled Task at 4:15 PM ET on weekdays
+            - Clean uninstaller via Add/Remove Programs
 
-            - Plots the last **60 calendar days** of trade P&L as a line chart with green/red fill above and below zero
-            - Dark-themed, clean layout — renders nicely in Discord's image preview
-            - Configurable look-back window via `config.yaml`
+            #### 📅 Trading-Day Rolling Benchmarks
+            Rolling windows (5d / 20d / 60d) now count **trading days**, not calendar days.
+            Weekends and market holidays are automatically excluded.
 
-            #### 📊 Rolling Performance Benchmarks
-            The daily report now includes a **rolling metrics table** appended below the main stats block, showing how today's numbers compare to your recent average:
-
-            ```
-            ----------|--------|--------|--------
-            Rolling   |   5d   |  20d   |  60d
-            ----------|--------|--------|--------
-            PCR       | 82.1%  | 78.4%  | 76.9%
-            Win %     | 86.7%  | 84.2%  | 81.5%
-            Avg Day   |  $930  |  $810  |  $740
-            ```
-
-            Windows default to 5 / 20 / 60 calendar days and are fully configurable.
+            #### 🚫 Skip Closed-Market Days
+            TradeScout detects when the market was closed (no trades and no DailyLog data)
+            and exits silently without posting. Configurable via `features.skip_closed_market`.
 
             #### ⚙️ Feature Flags in `config.yaml`
-            Both new features are **enabled by default** and can be toggled or tuned in `config.yaml`:
-
             ```yaml
             features:
               equity_curve:
@@ -97,19 +110,11 @@ jobs:
                 days: 60
               rolling_benchmarks:
                 enabled: true
-                windows: [5, 20, 60]
+                windows: [5, 20, 60]   # trading days
+              skip_closed_market:
+                enabled: true
             ```
-
-            Set `enabled: false` for either feature to revert to the previous report style.
-
-            ---
-
-            ### Dependencies
-            - `matplotlib 3.10.1` *(new — required for equity curve chart)*
-
-            ---
-
-            ### Installation Note
-            This release uses `--onedir` packaging. Extract `TradeScout.7z` and run `TradeScout.exe` from inside the extracted folder. Do not move the EXE out of the folder — it needs the bundled libraries alongside it.
-          files: TradeScout.7z
+          files: |
+            TradeScout.7z
+            installer/TradeScout-Setup.exe
           make_latest: true

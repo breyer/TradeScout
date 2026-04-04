@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import pandas as pd
 
-from Trade_Scout import calculate_trade_stats, create_trade_scout_message
+from Trade_Scout import calculate_trade_stats, create_trade_scout_message, is_market_closed
 
 
 @contextmanager
@@ -170,6 +170,49 @@ class TestCreateTradeScoutMessage(unittest.TestCase):
         mock_spx.return_value = _spx_df()
         msg = create_trade_scout_message(datetime(2024, 9, 23))
         self.assertIn('N/A', msg)
+
+
+class TestIsMarketClosed(unittest.TestCase):
+    """Tests for is_market_closed() — the market-closed detection helper."""
+
+    TARGET = datetime(2026, 4, 5)  # a Saturday
+    FEATURES_ON = {'skip_closed_market': {'enabled': True}}
+    FEATURES_OFF = {'skip_closed_market': {'enabled': False}}
+
+    def _conn_with_trades(self):
+        conn = MagicMock()
+        return conn
+
+    @patch('Trade_Scout.has_dailylog_rows', return_value=False)
+    @patch('Trade_Scout.get_trades', return_value=pd.DataFrame())
+    def test_skips_when_no_trades_and_no_dailylog(self, mock_trades, mock_log):
+        conn = MagicMock()
+        self.assertTrue(is_market_closed(conn, self.TARGET, self.FEATURES_ON))
+
+    @patch('Trade_Scout.has_dailylog_rows', return_value=True)
+    @patch('Trade_Scout.get_trades', return_value=pd.DataFrame())
+    def test_proceeds_when_no_trades_but_dailylog_exists(self, mock_trades, mock_log):
+        conn = MagicMock()
+        self.assertFalse(is_market_closed(conn, self.TARGET, self.FEATURES_ON))
+
+    @patch('Trade_Scout.has_dailylog_rows', return_value=False)
+    @patch('Trade_Scout.get_trades')
+    def test_proceeds_when_trades_exist_regardless_of_dailylog(self, mock_trades, mock_log):
+        mock_trades.return_value = pd.DataFrame({'ProfitLoss': [100.0]})
+        conn = MagicMock()
+        self.assertFalse(is_market_closed(conn, self.TARGET, self.FEATURES_ON))
+
+    @patch('Trade_Scout.has_dailylog_rows', return_value=False)
+    @patch('Trade_Scout.get_trades', return_value=pd.DataFrame())
+    def test_proceeds_when_feature_disabled(self, mock_trades, mock_log):
+        conn = MagicMock()
+        self.assertFalse(is_market_closed(conn, self.TARGET, self.FEATURES_OFF))
+
+    @patch('Trade_Scout.has_dailylog_rows', return_value=False)
+    @patch('Trade_Scout.get_trades', return_value=pd.DataFrame())
+    def test_defaults_to_enabled_when_key_missing(self, mock_trades, mock_log):
+        conn = MagicMock()
+        self.assertTrue(is_market_closed(conn, self.TARGET, {}))
 
 
 if __name__ == "__main__":

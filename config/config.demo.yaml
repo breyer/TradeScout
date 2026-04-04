@@ -29,4 +29,8 @@ features:
   # Append rolling performance benchmarks (PCR, Win %, Avg daily P&L) to the report.
   rolling_benchmarks:
     enabled: true
-    windows: [5, 20, 60]   # Look-back windows in calendar days
+    windows: [5, 20, 60]   # Look-back windows in trading days (weekends/holidays excluded)
+
+  # Skip posting when the market was closed (no trades and no DailyLog data for that day).
+  skip_closed_market:
+    enabled: true
