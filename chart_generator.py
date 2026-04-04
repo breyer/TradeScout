@@ -44,47 +44,49 @@ def generate_equity_curve(
     daily['cumulative_pl'] = daily['ProfitLoss'].cumsum()
 
     try:
-        fig, ax = plt.subplots(figsize=(10, 4))
+        fig, ax = plt.subplots(figsize=(12, 5))
 
         ax.plot(
             daily['date'], daily['cumulative_pl'],
-            color='#2ecc71', linewidth=2, zorder=3
+            color='#2ecc71', linewidth=2.5, zorder=3
         )
-        ax.axhline(0, color='#888', linewidth=0.8, linestyle='--', zorder=2)
+        ax.axhline(0, color='#666', linewidth=1.0, linestyle='--', zorder=2)
         ax.fill_between(
             daily['date'], daily['cumulative_pl'], 0,
             where=(daily['cumulative_pl'] >= 0),
-            alpha=0.15, color='#2ecc71', zorder=1
+            alpha=0.18, color='#2ecc71', zorder=1
         )
         ax.fill_between(
             daily['date'], daily['cumulative_pl'], 0,
             where=(daily['cumulative_pl'] < 0),
-            alpha=0.20, color='#e74c3c', zorder=1
+            alpha=0.25, color='#e74c3c', zorder=1
         )
 
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
         ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=0, interval=2))
-        fig.autofmt_xdate(rotation=30, ha='right')
+        fig.autofmt_xdate(rotation=25, ha='right')
         ax.yaxis.set_major_formatter(
             plt.FuncFormatter(lambda v, _: f'${v:,.0f}')
         )
 
-        ax.set_title(f'Equity Curve — last {days} days', fontsize=11, pad=10)
+        ax.set_title(f'Equity Curve — last {days} days', fontsize=13, pad=14, fontweight='bold')
+
+        # Subtle grid
+        ax.yaxis.grid(True, color='#333', linewidth=0.6, linestyle='-', zorder=0)
+        ax.set_axisbelow(True)
 
         # Dark theme
         bg_dark = '#1e1e2e'
         ax.set_facecolor(bg_dark)
         fig.patch.set_facecolor('#16161e')
         for spine in ax.spines.values():
-            spine.set_color('#444')
+            spine.set_color('#3a3a4a')
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.tick_params(axis='both', colors='#aaa', labelsize=9)
-        ax.title.set_color('#ddd')
-        ax.yaxis.label.set_color('#aaa')
-        ax.xaxis.label.set_color('#aaa')
+        ax.tick_params(axis='both', colors='#bbb', labelsize=10)
+        ax.title.set_color('#e0e0e0')
 
-        plt.tight_layout()
+        plt.tight_layout(pad=1.5)
 
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
         fig.savefig(temp_file.name, dpi=150, bbox_inches='tight',

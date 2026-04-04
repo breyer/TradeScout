@@ -212,10 +212,8 @@ if __name__ == "__main__":
         specified_date, premium_sold, premium_captured, pcr, win_rate,
         expired_trades, stops, bad_slip, bad_slip_max, spx_last,
         negative_exp, weekly_pl, monthly_pl,
+        rolling_rows=rolling_section,
     )
-
-    if rolling_section:
-        formatted_message += rolling_section
 
     message_ids = send_message_to_discord(
         formatted_message, args.noimage, args.win, args.debug, chart_path

@@ -143,6 +143,7 @@ def format_message(
     negative_exp: int,
     weekly_pl: float,
     monthly_pl: float,
+    rolling_rows: str = "",
 ) -> str:
     ALIGN_WIDTH = 12
 
@@ -168,7 +169,7 @@ def format_message(
     day_of_week = calendar.day_name[date.weekday()]
     full_date_header = f"{formatted_date} ({day_of_week})"
 
-    message = "\n\n" + "```" + f"""
+    body = f"""
 {full_date_header}
 ----------|------------
 SPX Last  | {spx_last_str:>{ALIGN_WIDTH}}
@@ -180,9 +181,12 @@ Exp : Stp | {exp_stp_str:>{ALIGN_WIDTH}}
 Bad Slip  | {bad_slip_combined_str:>{ALIGN_WIDTH}}
 -ve Exprd | {negative_exp_str:>{ALIGN_WIDTH}}
 WTD PL    | {weekly_pl_str:>{ALIGN_WIDTH}}
-MTD PL    | {monthly_pl_str:>{ALIGN_WIDTH}}
-""" + "```"
-    return message
+MTD PL    | {monthly_pl_str:>{ALIGN_WIDTH}}"""
+
+    if rolling_rows:
+        body += "\n" + rolling_rows
+
+    return "\n\n```" + body + "\n```"
 
 
 def calculate_metrics(
@@ -271,12 +275,14 @@ def calculate_rolling_metrics(
 
 def format_rolling_section(rolling: dict, windows: list) -> str:
     """
-    Format rolling benchmark metrics as a fixed-width Discord code block.
+    Return rolling benchmark rows as plain text (no code-fence wrappers).
 
-    Renders a compact table with one column per window (e.g. 5d / 20d / 60d)
-    and rows for PCR, Win %, and Avg daily P&L.
+    Designed to be embedded directly inside the main report's code block via
+    the *rolling_rows* parameter of format_message().  Renders a compact table
+    with one column per window (e.g. 5d / 20d / 60d) and rows for PCR, Win %,
+    and average daily P&L.
     """
-    col_w = 8
+    col_w = 7
     cols = [f"{w}d" for w in windows]
 
     sep = "----------|" + "|".join("-" * col_w for _ in windows)
@@ -293,15 +299,11 @@ def format_rolling_section(rolling: dict, windows: list) -> str:
         for w in windows
     ]
 
-    lines = [
-        sep,
-        header,
-        sep,
-        _row("PCR", pcr_vals),
-        _row("Win %", win_vals),
-        _row("Avg Day", pl_vals),
-    ]
-    return "\n\n```\n" + "\n".join(lines) + "\n```"
+    lines = [sep, header, sep,
+             _row("PCR", pcr_vals),
+             _row("Win %", win_vals),
+             _row("Avg Day", pl_vals)]
+    return "\n".join(lines)
 
 
 def input_with_timeout(prompt: str, timeout: int) -> Optional[str]:
