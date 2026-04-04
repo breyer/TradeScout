@@ -136,7 +136,7 @@ def generate_daily_chart(
         fig.autofmt_xdate(rotation=0, ha='center')
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f'${v:,.0f}'))
 
-        day_str = target_date.strftime('%A, %B %-d %Y')
+        day_str = target_date.strftime('%A, %B %d %Y').replace(' 0', ' ')
         ax.set_title(f'PnL Timeline — {day_str}',
                      fontsize=12, pad=14, fontweight='bold', color='#e0e0e0')
 
