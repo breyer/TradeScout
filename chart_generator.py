@@ -10,9 +10,146 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from db_handler import get_trades_range
+from db_handler import get_dailylog_for_date, get_trades, get_trades_range
 
 logger = logging.getLogger(__name__)
+
+
+def generate_daily_chart(
+    connection: sqlite3.Connection, target_date: datetime
+) -> Optional[str]:
+    """
+    Generate a TAT-style intraday PnL timeline PNG for *target_date*.
+
+    Three lines, all on the same dollar axis:
+      - Blue step    : PremiumSold  (cumulative premium collected as trades open)
+      - Orange line  : PL           (running mark-to-market P&L from DailyLog)
+      - Yellow step  : Realized PL  (cumulative closed-trade P&L built from Trade table)
+
+    Returns a temp file path (caller is responsible for cleanup), or None on failure.
+    """
+    from utils import convert_to_human_readable  # lazy — avoids circular import
+
+    df_log = get_dailylog_for_date(connection, target_date)
+    if df_log.empty:
+        logger.info("No DailyLog data for daily chart on %s.", target_date.date())
+        return None
+
+    # Build realized PL staircase from Trade closes
+    df_trades = get_trades(connection, target_date.year, target_date.month, target_date.day)
+    realized_times: list = []
+    realized_values: list = []
+    if not df_trades.empty:
+        closed = df_trades.dropna(subset=['DateClosed', 'ProfitLoss']).copy()
+        closed = closed.sort_values('DateClosed')
+        cumulative = 0.0
+        for _, row in closed.iterrows():
+            cumulative += float(row['ProfitLoss'])
+            realized_times.append(row['DateClosed'])
+            realized_values.append(cumulative)
+
+    try:
+        bg_dark   = '#1e1e2e'
+        bg_fig    = '#16161e'
+        col_blue  = '#4a9eff'
+        col_orange = '#ff8c42'
+        col_yellow = '#f0e040'
+        col_grid  = '#2a2a3a'
+        col_tick  = '#aaaaaa'
+
+        fig, ax = plt.subplots(figsize=(14, 5))
+        fig.patch.set_facecolor(bg_fig)
+        ax.set_facecolor(bg_dark)
+
+        # Orange: DailyLog PL (mark-to-market)
+        ax.plot(
+            df_log['time'], df_log['PL'],
+            color=col_orange, linewidth=1.2, zorder=3, label='PL'
+        )
+
+        # Blue step: cumulative PremiumSold
+        ax.step(
+            df_log['time'], df_log['PremiumSold'],
+            color=col_blue, linewidth=1.8, zorder=4, where='post', label='Premium Sold'
+        )
+
+        # Yellow step: realized PL from Trade closes
+        if realized_times:
+            # Prepend a zero at the first log time so the step starts at 0
+            step_times = [df_log['time'].iloc[0]] + realized_times
+            step_values = [0.0] + realized_values
+            ax.step(
+                step_times, step_values,
+                color=col_yellow, linewidth=1.8, zorder=5, where='post', label='Realized PL'
+            )
+
+        # Zero baseline
+        ax.axhline(0, color='#555566', linewidth=0.8, linestyle='--', zorder=2)
+
+        # Annotations: final PL + minimum PL
+        final_pl = float(df_log['PL'].iloc[-1])
+        final_time = df_log['time'].iloc[-1]
+        ax.annotate(
+            f"Final PnL: ${final_pl:,.2f}",
+            xy=(final_time, final_pl),
+            xytext=(10, 0), textcoords='offset points',
+            color='#00e676', fontsize=8, fontweight='bold',
+            va='center',
+        )
+        ax.plot(final_time, final_pl, 'o', color='#00e676', markersize=6, zorder=6)
+
+        min_idx = df_log['PL'].idxmin()
+        min_pl  = float(df_log['PL'].iloc[min_idx])
+        min_time = df_log['time'].iloc[min_idx]
+        if min_pl < 0:
+            ax.annotate(
+                f"{min_time.strftime('%H:%M')}, ${min_pl:,.2f}",
+                xy=(min_time, min_pl),
+                xytext=(6, -14), textcoords='offset points',
+                color=col_orange, fontsize=8,
+                va='top',
+            )
+
+        # Axes formatting
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+        fig.autofmt_xdate(rotation=0, ha='center')
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f'${v:,.0f}'))
+
+        ax.set_title(
+            f"{target_date.strftime('%Y%m%d')} PnL Timeline",
+            fontsize=12, pad=12, fontweight='bold', color='#e0e0e0'
+        )
+
+        ax.yaxis.grid(True, color=col_grid, linewidth=0.6, zorder=0)
+        ax.set_axisbelow(True)
+
+        for spine in ax.spines.values():
+            spine.set_color('#3a3a4a')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.tick_params(axis='both', colors=col_tick, labelsize=9)
+
+        ax.legend(
+            loc='lower right', fontsize=8,
+            facecolor='#2a2a3a', edgecolor='#3a3a4a', labelcolor=col_tick,
+        )
+
+        plt.tight_layout(pad=1.2)
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        fig.savefig(temp_file.name, dpi=150, bbox_inches='tight',
+                    facecolor=fig.get_facecolor())
+        temp_file.close()
+        plt.close(fig)
+
+        logger.info("Daily chart saved to %s", temp_file.name)
+        return temp_file.name
+
+    except Exception as e:
+        logger.error("Failed to generate daily chart: %s", e)
+        plt.close('all')
+        return None
 
 
 def generate_equity_curve(

@@ -202,7 +202,8 @@ if __name__ == "__main__":
     specified_date = get_specified_date(args.date)
     year, month, day = specified_date.year, specified_date.month, specified_date.day
 
-    chart_path: Optional[str] = None
+    daily_chart_path: Optional[str] = None
+    equity_chart_path: Optional[str] = None
     rolling_section: str = ""
 
     with connect_db() as connection:
@@ -232,9 +233,11 @@ if __name__ == "__main__":
 
         spx_last = get_last_spx_value(connection, year, month, day)
 
+        from chart_generator import generate_daily_chart, generate_equity_curve
+        daily_chart_path = generate_daily_chart(connection, specified_date)
+
         if ec_enabled and should_post_equity_curve(specified_date, connection):
-            from chart_generator import generate_equity_curve
-            chart_path = generate_equity_curve(connection, specified_date, ec_days)
+            equity_chart_path = generate_equity_curve(connection, specified_date, ec_days)
 
         if rb_enabled:
             rolling = calculate_rolling_metrics(connection, specified_date, rb_windows)
@@ -247,12 +250,15 @@ if __name__ == "__main__":
         rolling_rows=rolling_section,
     )
 
+    chart_paths = [p for p in [daily_chart_path, equity_chart_path] if p]
     message_ids = send_message_to_discord(
-        formatted_message, args.noimage, args.win, args.debug, chart_path
+        formatted_message, args.noimage, args.win, args.debug,
+        chart_paths=chart_paths if chart_paths else None,
     )
 
-    if chart_path and os.path.exists(chart_path):
-        os.remove(chart_path)
+    for p in chart_paths:
+        if os.path.exists(p):
+            os.remove(p)
 
     user_input = input_with_timeout("Do you want to delete the posting? (Y/N): ", 30)
     if user_input and user_input.strip().lower() in ['yes', 'y']:

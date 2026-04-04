@@ -26,14 +26,15 @@ def send_message_to_discord(
     noimage: bool,
     win: str = 'max',
     debug: bool = False,
-    chart_path: Optional[str] = None,
+    chart_paths: Optional[List[str]] = None,
 ) -> List[Optional[str]]:
     """
     Post *message* to all configured Discord webhooks.
 
-    Optionally attaches a screenshot of the TAT application window and/or a
-    chart PNG (*chart_path*).  When multiple files are present, Discord's
-    indexed multipart format (files[0], files[1]) is used with payload_json.
+    Optionally attaches a screenshot of the TAT application window and/or one
+    or more chart PNGs (*chart_paths*).  When multiple files are present,
+    Discord's indexed multipart format (files[0], files[1], …) is used with
+    payload_json.
 
     Returns a list of message IDs (one per webhook; None on failure).
     """
@@ -44,12 +45,13 @@ def send_message_to_discord(
     message_ids: List[Optional[str]] = []
     webhooks = load_webhooks()
 
-    # Build the ordered list of (field_name, file_path) pairs to attach.
+    # Build the ordered list of file paths to attach.
     attachments = []
     if screenshot_path and os.path.isfile(screenshot_path):
         attachments.append(screenshot_path)
-    if chart_path and os.path.isfile(chart_path):
-        attachments.append(chart_path)
+    for p in (chart_paths or []):
+        if p and os.path.isfile(p):
+            attachments.append(p)
 
     for webhook in webhooks:
         url = webhook["url"]

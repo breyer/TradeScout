@@ -237,6 +237,50 @@ def get_trades_range(
     return pd.read_sql_query(query, connection, params=(start_int, end_int))
 
 
+def get_dailylog_for_date(
+    connection: sqlite3.Connection, target_date: datetime
+) -> pd.DataFrame:
+    """
+    Return all DailyLog rows for *target_date* with non-zero SPX, sorted ascending.
+
+    Columns: time (datetime), PL, PremiumSold, SPX.
+    LogDate is stored as .NET DateTime ticks (100-ns since 0001-01-01) in local time.
+    """
+    from utils import NET_EPOCH_OFFSET_SECONDS, NET_TICKS_PER_SECOND  # avoid circular at import
+    epoch = datetime(1970, 1, 1)
+    start_ticks = int(
+        (
+            (datetime(target_date.year, target_date.month, target_date.day) - epoch).total_seconds()
+            + NET_EPOCH_OFFSET_SECONDS
+        )
+        * NET_TICKS_PER_SECOND
+    )
+    end_ticks = int(
+        (
+            (
+                datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, 999999)
+                - epoch
+            ).total_seconds()
+            + NET_EPOCH_OFFSET_SECONDS
+        )
+        * NET_TICKS_PER_SECOND
+    )
+    query = """
+        SELECT LogDate, PL, PremiumSold, SPX
+        FROM DailyLog
+        WHERE LogDate BETWEEN ? AND ?
+          AND SPX IS NOT NULL AND SPX != 0
+        ORDER BY LogDate ASC
+    """
+    df = pd.read_sql_query(query, connection, params=(start_ticks, end_ticks))
+    if df.empty:
+        return df
+    df['time'] = df['LogDate'].apply(
+        lambda t: epoch + timedelta(seconds=t / NET_TICKS_PER_SECOND - NET_EPOCH_OFFSET_SECONDS)
+    )
+    return df[['time', 'PL', 'PremiumSold', 'SPX']]
+
+
 def get_spx_data_from_db(
     connection: Optional[sqlite3.Connection] = None,
 ) -> pd.DataFrame:
