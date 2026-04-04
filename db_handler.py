@@ -3,7 +3,7 @@ import os
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Generator, Optional, Union
 
 import pandas as pd
