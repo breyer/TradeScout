@@ -63,44 +63,47 @@ Var RollingBenchmarks   ; "1" = enabled
 Var EquityCurveYaml     ; "true" or "false"
 Var RollingYaml         ; "true" or "false"
 
-; ── .onInit — detect TAT directory ──────────────────────────────────────────
+; ── .onInit — detect TAT data directory via UWP Get-AppxPackage ─────────────
 Function .onInit
   StrCpy $TATDir ""
 
-  ; 1. Registry probe
-  ReadRegStr $0 HKCU "Software\Trade Automation Toolbox" "InstallPath"
-  ${If} $0 != ""
-  ${AndIf} ${FileExists} "$0\TradeAutomationToolbox.exe"
-    StrCpy $TATDir $0
-    Goto FoundTAT
-  ${EndIf}
-  ReadRegStr $0 HKCU "Software\Trade Automation Toolbox" "InstallPath"
-  ${If} $0 != ""
-  ${AndIf} ${FileExists} "$0\TAT.exe"
-    StrCpy $TATDir $0
-    Goto FoundTAT
+  ; 1. UWP detection: ask PowerShell for the PackageFamilyName of TAT.
+  ;    TAT is a UWP app; its database lives in:
+  ;    %LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalState\data.db3
+  nsExec::ExecToStack \
+    "powershell -NoProfile -NonInteractive -Command \
+$\"(Get-AppxPackage -Name '*TradeAutomationToolbox*').PackageFamilyName$\""
+  Pop $0   ; exit code
+  Pop $1   ; stdout — PackageFamilyName (plus trailing \r\n)
+
+  ; Trim trailing \r\n before using the value
+  StrLen $R0 $1
+  ${If} $R0 > 2
+    StrCpy $1 $1 -2
   ${EndIf}
 
-  ; 2. Known default paths — validate by checking for a TAT executable
-  ${If} ${FileExists} "$LOCALAPPDATA\TAT\TradeAutomationToolbox.exe"
+  ${If} $0 == 0
+  ${AndIf} $1 != ""
+    StrCpy $R1 "$LOCALAPPDATA\Packages\$1\LocalState"
+    ${If} ${FileExists} "$R1\data.db3"
+      StrCpy $TATDir $R1
+      Goto FoundTAT
+    ${EndIf}
+  ${EndIf}
+
+  ; 2. Non-UWP fallback paths (legacy / portable TAT installs)
+  ${If} ${FileExists} "$LOCALAPPDATA\TAT\data.db3"
     StrCpy $TATDir "$LOCALAPPDATA\TAT"
     Goto FoundTAT
   ${EndIf}
-  ${If} ${FileExists} "$LOCALAPPDATA\TAT\TAT.exe"
-    StrCpy $TATDir "$LOCALAPPDATA\TAT"
-    Goto FoundTAT
-  ${EndIf}
-  ${If} ${FileExists} "$LOCALAPPDATA\Trade Automation Toolbox\TradeAutomationToolbox.exe"
+  ${If} ${FileExists} "$LOCALAPPDATA\Trade Automation Toolbox\data.db3"
     StrCpy $TATDir "$LOCALAPPDATA\Trade Automation Toolbox"
     Goto FoundTAT
   ${EndIf}
-  ${If} ${FileExists} "$PROGRAMFILES\TAT\TradeAutomationToolbox.exe"
-    StrCpy $TATDir "$PROGRAMFILES\TAT"
-    Goto FoundTAT
-  ${EndIf}
 
-  ; 3. Fallback — use default, let the user browse
-  StrCpy $TATDir "$LOCALAPPDATA\TAT"
+  ; 3. No data.db3 found — pre-fill with the expected UWP Packages path
+  ;    and let the user browse to the correct LocalState folder.
+  StrCpy $TATDir "$LOCALAPPDATA\Packages"
 
   FoundTAT:
   StrCpy $INSTDIR "$TATDir\TradeScout"
@@ -117,28 +120,28 @@ Function .onInit
   StrCpy $RollingBenchmarks "1"
 FunctionEnd
 
-; ── Custom Page: TAT Directory ───────────────────────────────────────────────
+; ── Custom Page: TAT Data Directory ─────────────────────────────────────────
 Function PageTATDir
-  !insertmacro MUI_HEADER_TEXT "TAT Install Directory" \
-    "TradeScout will be installed inside your TAT folder."
+  !insertmacro MUI_HEADER_TEXT "TAT Data Directory" \
+    "TradeScout needs to know where your TAT database (data.db3) is stored."
 
   nsDialogs::Create 1018
   Pop $0
 
-  ${NSD_CreateLabel} 0 0 100% 24u \
-    "TradeScout detected the following TAT directory. Change it if needed, \
-then click Next."
+  ${NSD_CreateLabel} 0 0 100% 30u \
+    "The folder below was detected automatically. It should contain data.db3. \
+Change it if the path is wrong, then click Next."
   Pop $0
 
-  ${NSD_CreateDirRequest} 0 30u 80% 14u $TATDir
+  ${NSD_CreateDirRequest} 0 36u 80% 14u $TATDir
   Pop $TATDirCtrl
 
-  ${NSD_CreateBrowseButton} 82% 29u 18% 15u "Browse..."
+  ${NSD_CreateBrowseButton} 82% 35u 18% 15u "Browse..."
   Pop $0
   ${NSD_OnClick} $0 PageTATDirBrowse
 
-  ${NSD_CreateLabel} 0 52u 100% 20u \
-    "TradeScout will be installed into: <TAT DIR>\TradeScout\"
+  ${NSD_CreateLabel} 0 58u 100% 20u \
+    "TradeScout will be installed into: <selected folder>\TradeScout\"
   Pop $0
 
   nsDialogs::Show
@@ -146,7 +149,8 @@ FunctionEnd
 
 Function PageTATDirBrowse
   Pop $0  ; handle of the clicked control (passed by ${NSD_OnClick})
-  nsDialogs::SelectFolderDialog "Select your TAT installation folder" $TATDir
+  nsDialogs::SelectFolderDialog \
+    "Select the folder that contains data.db3 (TAT LocalState)" $TATDir
   Pop $0
   ${If} $0 != "error"
     ${NSD_SetText} $TATDirCtrl $0
@@ -156,17 +160,16 @@ FunctionEnd
 Function PageTATDirLeave
   ${NSD_GetText} $TATDirCtrl $TATDir
   ${If} $TATDir == ""
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Please select a TAT directory."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Please select a folder."
     Abort
   ${EndIf}
   StrCpy $INSTDIR "$TATDir\TradeScout"
 
-  ; Warn (don't block) if TAT executable not found in the chosen directory
-  ${IfNot} ${FileExists} "$TATDir\TradeAutomationToolbox.exe"
-  ${AndIfNot} ${FileExists} "$TATDir\TAT.exe"
+  ; Warn if data.db3 is not found in the chosen directory
+  ${IfNot} ${FileExists} "$TATDir\data.db3"
     MessageBox MB_YESNO|MB_ICONEXCLAMATION \
-      "No TAT executable was found in:$\r$\n$TATDir$\r$\n$\r$\n\
-TradeScout reads the TAT database from this location. \
+      "data.db3 was not found in:$\r$\n$TATDir$\r$\n$\r$\n\
+This file is the TAT database that TradeScout reads. \
 Are you sure this is the correct folder?" \
       IDYES ContinueTAT
     Abort
@@ -362,9 +365,10 @@ Function WriteConfig
   !insertmacro BoolToYaml $EquityCurve $EquityCurveYaml
   !insertmacro BoolToYaml $RollingBenchmarks $RollingYaml
 
-  ; db_path: use single-quoted YAML so backslashes are treated as literals.
+  ; db_path: data.db3 sits directly in the TAT LocalState folder.
+  ; Single-quoted YAML: backslashes are treated as literals by PyYAML.
   ; Python's os.path and sqlite3 both accept Windows backslash paths.
-  StrCpy $1 "$TATDir\data\data.db3"
+  StrCpy $1 "$TATDir\data.db3"
 
   ; Webhook entry
   ${If} $WebhookURL != ""
