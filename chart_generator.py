@@ -140,6 +140,11 @@ def generate_daily_chart(
         ax.set_title(f'PnL Timeline — {day_str}',
                      fontsize=12, pad=14, fontweight='bold', color='#e0e0e0')
 
+        fig.text(0.99, 0.97, 'github.com/breyer/TradeScout',
+                 ha='right', va='top', fontsize=7.5,
+                 color='#555566', style='italic',
+                 transform=fig.transFigure)
+
         ax.yaxis.grid(True, color=col_grid, linewidth=0.5, zorder=0)
         ax.xaxis.grid(True, color=col_grid, linewidth=0.4, zorder=0)
         ax.set_axisbelow(True)
