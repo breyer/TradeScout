@@ -8,8 +8,8 @@
 !define PRODUCT_URL     "https://github.com/breyer/TradeScout"
 !define TASK_NAME       "TradeScout Daily Report"
 !define TASK_MARKER     ".task_created"
-!define CONFIG_FILE     "config\config.yaml"
-!define CONFIG_DEMO     "config\config.demo.yaml"
+!define CONFIG_FILE     "config.yaml"
+!define CONFIG_DEMO     "config.demo.yaml"
 
 ; Version is injected at compile time: makensis /DVERSION=v2026.04.04-abc1234
 !ifndef VERSION
@@ -135,7 +135,7 @@ then click Next."
 
   ${NSD_CreateBrowseButton} 82% 29u 18% 15u "Browse..."
   Pop $0
-  nsDialogs::OnClick $0 PageTATDirBrowse
+  ${NSD_OnClick} $0 PageTATDirBrowse
 
   ${NSD_CreateLabel} 0 52u 100% 20u \
     "TradeScout will be installed into: <TAT DIR>\TradeScout\"
@@ -145,6 +145,7 @@ then click Next."
 FunctionEnd
 
 Function PageTATDirBrowse
+  Pop $0  ; handle of the clicked control (passed by ${NSD_OnClick})
   nsDialogs::SelectFolderDialog "Select your TAT installation folder" $TATDir
   Pop $0
   ${If} $0 != "error"
@@ -195,7 +196,7 @@ Function PageWebhook
 
   ${NSD_CreateLabel} 0 0 100% 24u \
     "Paste your Discord webhook URL below. You can leave this blank and \
-add it to config\config.yaml after installation."
+add it to config.yaml after installation."
   Pop $0
 
   ${NSD_CreateText} 0 30u 100% 14u "https://discord.com/api/webhooks/..."
@@ -246,7 +247,7 @@ Function PageFeatures
 
   ${NSD_CreateLabel} 0 0 100% 20u \
     "Both features are enabled by default. You can change them later in \
-config\config.yaml."
+config.yaml."
   Pop $0
 
   ${NSD_CreateCheckbox} 0 28u 100% 14u \
@@ -293,9 +294,6 @@ Section "TradeScout" SecMain
 
   SetOutPath "$INSTDIR"
   File "..\dist\TradeScout.exe"
-
-  ; Config directory
-  SetOutPath "$INSTDIR\config"
   File /oname=config.demo.yaml "..\config\config.demo.yaml"
 
   ; Write config.yaml only on fresh install
@@ -415,7 +413,7 @@ Section "Uninstall"
 
   ; Remove files (preserve config.yaml)
   Delete "$INSTDIR\TradeScout.exe"
-  Delete "$INSTDIR\config\config.demo.yaml"
+  Delete "$INSTDIR\config.demo.yaml"
   Delete "$INSTDIR\Uninstall.exe"
 
   ; Offer to remove config.yaml
@@ -428,8 +426,7 @@ Click No to keep it for a future reinstall." \
     KeepConfig:
   ${EndIf}
 
-  ; Remove directories (only if empty)
-  RMDir "$INSTDIR\config"
+  ; Remove directory (only if empty)
   RMDir "$INSTDIR"
 
   ; Start Menu
