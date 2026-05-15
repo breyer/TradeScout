@@ -7,7 +7,12 @@
 
 # Path to your database file
 # Note: use black slash "/" in path
-db_path: "data/data.db3"  
+db_path: "data/data.db3"
+
+# Optional: A label that appears in bold above the Discord report.
+# Useful when running TradeScout on multiple servers with different strategies.
+# Leave commented out (or empty) to omit the label entirely.
+# strategy_name: "0DTE Iron Condor"
 
 webhooks:
   # The "url" field is required and should be the full Discord webhook URL.

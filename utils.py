@@ -175,6 +175,7 @@ def format_message(
     weekly_pl: float,
     monthly_pl: float,
     rolling_rows: str = "",
+    strategy_name: Optional[str] = None,
 ) -> str:
     ALIGN_WIDTH = 12
 
@@ -217,7 +218,10 @@ MTD PL    | {monthly_pl_str:>{ALIGN_WIDTH}}"""
     if rolling_rows:
         body += "\n" + rolling_rows
 
-    return "\n\n```" + body + "\n```"
+    code_block = "```" + body + "\n```"
+    if strategy_name and strategy_name.strip():
+        return f"\n\n**{strategy_name.strip()}**\n{code_block}"
+    return "\n\n" + code_block
 
 
 def calculate_metrics(

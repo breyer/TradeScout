@@ -199,6 +199,8 @@ if __name__ == "__main__":
     rb_enabled = rb_cfg.get('enabled', True)
     rb_windows = list(rb_cfg.get('windows', [5, 20, 60]))
 
+    strategy_name = config.get('strategy_name')
+
     specified_date = get_specified_date(args.date)
     year, month, day = specified_date.year, specified_date.month, specified_date.day
 
@@ -248,6 +250,7 @@ if __name__ == "__main__":
         expired_trades, stops, bad_slip, bad_slip_max, spx_last,
         negative_exp, weekly_pl, monthly_pl,
         rolling_rows=rolling_section,
+        strategy_name=strategy_name,
     )
 
     chart_paths = [p for p in [daily_chart_path, equity_chart_path] if p]

@@ -272,6 +272,31 @@ class TestFormatMessage(unittest.TestCase):
         msg = self._call(weekly_pl=-500.0)
         self.assertIn('($500.00)', msg)
 
+    def test_strategy_name_renders_bold_preamble(self):
+        msg = self._call(strategy_name="0DTE Iron Condor")
+        self.assertIn('**0DTE Iron Condor**', msg)
+        self.assertLess(msg.index('**0DTE Iron Condor**'), msg.index('```'))
+
+    def test_strategy_name_none_omits_preamble(self):
+        msg = self._call(strategy_name=None)
+        self.assertNotIn('**', msg)
+        self.assertTrue(msg.startswith('\n\n```'))
+
+    def test_strategy_name_empty_string_omits_preamble(self):
+        msg = self._call(strategy_name="")
+        self.assertNotIn('**', msg)
+        self.assertTrue(msg.startswith('\n\n```'))
+
+    def test_strategy_name_whitespace_only_omits_preamble(self):
+        msg = self._call(strategy_name="   ")
+        self.assertNotIn('**', msg)
+        self.assertTrue(msg.startswith('\n\n```'))
+
+    def test_strategy_name_stripped(self):
+        msg = self._call(strategy_name="  My Strategy  ")
+        self.assertIn('**My Strategy**', msg)
+        self.assertNotIn('**  My Strategy  **', msg)
+
 
 # ---------------------------------------------------------------------------
 # get_last_spx_value
